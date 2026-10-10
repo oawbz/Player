@@ -53,7 +53,7 @@ class DetailActivity : BaseActivity() {
         if (result.episodes.size > 1) info.add("共 ${result.episodes.size} 集")
         b.metadata.text = info.joinToString("  ·  "); b.metadata.visibility = if (info.isEmpty()) View.GONE else View.VISIBLE
         b.genres.text = meta.genres.joinToString(" / "); b.genres.visibility = if (meta.genres.isEmpty()) View.GONE else View.VISIBLE
-        b.description.text = meta.plot.ifEmpty { "暂无影片资料，可在影片目录放入 movie.nfo 或 tvshow.nfo" }
+        b.description.text = meta.plot.ifEmpty { "暂无简介" }
         b.expand.visibility = if (meta.plot.isEmpty()) View.GONE else View.VISIBLE
         b.expand.setOnClickListener {
             val text = text(meta.plot).apply { setPadding(dp(20), dp(12), dp(20), dp(12)) }

@@ -26,7 +26,8 @@ class MainActivity : PosterActivity() {
             histories.forEach { h -> row.addView(poster(Work(h.connectionId, h.workPath, h.workName, h.coverPath), h), cardParams()) }
         }
         val categories = store.categories()
-        b.status.text = if (categories.isEmpty()) "在设置中连接 WebDAV，并添加分类开始观看" else "目录名称就是作品名称 · 点击海报选择影片或剧集"
+        b.status.text = if (categories.isEmpty()) "在设置中连接 WebDAV，并添加分类开始观看" else ""
+        b.status.visibility = if (categories.isEmpty()) View.VISIBLE else View.GONE
         if (categories.isEmpty()) {
             b.rows.addView(button("连接 WebDAV / 添加分类") { b.settings.performClick() }); return
         }
