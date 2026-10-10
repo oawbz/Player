@@ -29,6 +29,7 @@ object Nfo {
         val fields = mutableMapOf<String, String>()
         val genres = mutableListOf<String>()
         val texts = mutableMapOf<Int, StringBuilder>()
+        val tags = mutableMapOf<Int, String>()
         var root = ""; var closed = false
         var ratingMax = 10.0; var ratingDefault = false; var ratingValue: Double? = null
         val ratings = mutableListOf<Pair<Boolean, Double>>()
@@ -39,11 +40,12 @@ object Nfo {
                 when (event) {
                     XmlPullParser.START_TAG -> {
                         texts[parser.depth] = StringBuilder()
+                        tags[parser.depth] = parser.name
                         if (parser.depth == 1) {
                             if (root.isNotEmpty() || parser.name !in setOf("movie", "tvshow", "episodedetails")) throw DavFailure("NFO 不是影片或剧集 XML")
                             root = parser.name
                         }
-                        if (parser.depth == 3 && parser.name == "rating") {
+                        if (parser.depth == 3 && parser.name == "rating" && tags[2] == "ratings") {
                             ratingMax = parser.getAttributeValue(null, "max")?.toDoubleOrNull() ?: 10.0
                             ratingDefault = parser.getAttributeValue(null, "default").equals("true", true)
                             ratingValue = null
@@ -60,12 +62,13 @@ object Nfo {
                             if (parser.name == "genre" && value.isNotEmpty()) genres.add(value)
                             else if (parser.name in setOf("title", "plot", "year", "premiered", "aired", "runtime", "rating")) fields[parser.name] = value
                         }
-                        if (parser.depth == 4 && parser.name == "value") ratingValue = value.toDoubleOrNull()
-                        if (parser.depth == 3 && parser.name == "rating") {
+                        if (parser.depth == 4 && parser.name == "value" && tags[2] == "ratings" && tags[3] == "rating") ratingValue = value.toDoubleOrNull()
+                        if (parser.depth == 3 && parser.name == "rating" && tags[2] == "ratings") {
                             val score = ratingValue
                             if (score != null && score.isFinite() && ratingMax.isFinite() && ratingMax > 0 && score in 0.0..ratingMax)
                                 ratings.add(ratingDefault to score * 10.0 / ratingMax)
                         }
+                        tags.remove(parser.depth)
                         if (parser.depth == 1) closed = true
                     }
                 }
