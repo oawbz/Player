@@ -119,13 +119,13 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     private fun start() {
         if (!resumed || !surfaceReady || engine != null || failed) return
         val expected = ++attempt; ready = false; videoRatio = 0f
-        b.status.text = "正在准备 · ${coreName()}"; b.seek.isEnabled = false
+        b.status.text = "正在准备"; b.seek.isEnabled = false
         if (desiredPlay) requestFocus()
         val listener = object : Engine.Listener {
             private fun current() = resumed && expected == attempt && engine != null
-            override fun ready() { if (current()) { ready = true; handler.removeCallbacks(timeout); b.seek.isEnabled = true; b.status.text = coreName(); b.loading.visibility = View.GONE; updateControls(); scheduleHide() } }
+            override fun ready() { if (current()) { ready = true; handler.removeCallbacks(timeout); b.seek.isEnabled = true; b.status.text = ""; b.loading.visibility = View.GONE; updateControls(); scheduleHide() } }
             override fun buffering(active: Boolean) { if (current()) {
-                b.status.text = if (active) "缓冲中 · ${coreName()}" else coreName()
+                b.status.text = if (active) "缓冲中" else ""
                 b.loading.visibility = if (active) View.VISIBLE else View.GONE
             } }
             override fun ended() { if (current()) { capture(); position = duration; desiredPlay = false; save(); b.status.text = "播放结束"; updateControls(); setControlsVisible(true) } }
@@ -143,7 +143,6 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
         capture(); save(); release(); failed = true
         b.status.text = message; b.loading.visibility = View.GONE; b.seek.isEnabled = false; updateControls(); setControlsVisible(true)
     }
-    private fun coreName() = if (core == Core.SYSTEM) "系统 MediaPlayer" else "ExoPlayer"
     private fun seek(target: Long) {
         if (!ready || duration <= 0) return
         position = target.coerceIn(0, duration); engine?.seek(position); updateControls()
@@ -159,6 +158,7 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     }
     private fun updateControls() {
         if (!::b.isInitialized) return
+        b.status.visibility = if (b.status.text.isEmpty()) View.GONE else View.VISIBLE
         val icon = if (failed || (duration > 0 && position >= duration)) PlayerIcon.Kind.REPLAY else if (desiredPlay) PlayerIcon.Kind.PAUSE else PlayerIcon.Kind.PLAY
         if (toggleKind != icon) { toggleKind = icon; b.toggle.setImageDrawable(PlayerIcon(icon)) }
         b.toggle.contentDescription = if (failed) "重试" else if (icon == PlayerIcon.Kind.REPLAY) "重新播放" else if (desiredPlay) "暂停" else "播放"
