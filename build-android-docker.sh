@@ -22,10 +22,8 @@ docker run --rm --platform linux/amd64 --network host \
   --env ANDROID_SDK_ROOT=/opt/android-sdk-linux \
   --workdir /workspace "$image" bash -lc '
     set -euo pipefail
-    if [[ -d /usr/lib/jvm/java-17-openjdk-amd64 ]]; then
-      export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-      export PATH="$JAVA_HOME/bin:$PATH"
-    fi
+    export JAVA_HOME=/opt/davplayer-jdk17
+    export PATH="$JAVA_HOME/bin:$PATH"
     java -version 2>&1 | head -n 1 | grep -E "version \"17[.]" >/dev/null || {
       echo "Pinned toolchain requires JDK 17; inspect the image before building" >&2; exit 1;
     }

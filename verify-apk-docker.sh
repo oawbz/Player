@@ -6,6 +6,8 @@ fi
 image='davplayer-android:34-temurin17.0.20.1-1'
 docker run --rm --platform linux/amd64 --network host --volume "$PWD:/workspace:ro" --workdir /workspace "$image" bash -lc '
   set -euo pipefail
+  export JAVA_HOME=/opt/davplayer-jdk17
+  export PATH="$JAVA_HOME/bin:$PATH"
   apk=app/build/outputs/apk/debug/app-debug.apk
   tools=/opt/android-sdk-linux/build-tools/34.0.0
   metadata="$($tools/aapt dump badging "$apk")"
