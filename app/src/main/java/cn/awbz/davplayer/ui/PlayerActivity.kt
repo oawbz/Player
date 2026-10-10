@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.os.Bundle
+import android.os.Build
+import android.view.MotionEvent
 import android.view.KeyEvent
 import android.view.SurfaceHolder
 import android.view.View
@@ -36,6 +38,11 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     private var failed = false
     private var lostFocus = false
     private var focusHeld = false
+    private var controlsVisible = true
+    private var scrubbing = false
+    private var coreDialogOpen = false
+    private var toggleKind: PlayerIcon.Kind? = null
+    private val hideControls = Runnable { if (resumed && ready && desiredPlay && !failed && !scrubbing && !coreDialogOpen) setControlsVisible(false) }
     private val timeout = Runnable { if (engine != null && !ready) fail("媒体准备超时，请检查网络或手动切换核心") }
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
         when (change) {
@@ -66,7 +73,13 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
         volumeControlStream = AudioManager.STREAM_MUSIC
         core = store.core; audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         b = ActivityPlayerBinding.inflate(layoutInflater); setContentView(b.root)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        b.back.setImageDrawable(PlayerIcon(PlayerIcon.Kind.BACK))
+        b.rewind.setImageDrawable(PlayerIcon(PlayerIcon.Kind.REWIND))
+        b.forward.setImageDrawable(PlayerIcon(PlayerIcon.Kind.FORWARD))
+        b.core.setImageDrawable(PlayerIcon(PlayerIcon.Kind.SETTINGS))
+        b.tapArea.setOnClickListener { setControlsVisible(!controlsVisible) }
+        applyFullscreen()
         b.title.text = listOf(work.name, episode.season, episode.name).filter { it.isNotEmpty() }.joinToString(" · ")
         b.surface.holder.addCallback(this)
         b.root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> fitVideo() }
@@ -78,22 +91,24 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
                 if (duration > 0 && position >= duration) seek(0)
                 desiredPlay = true; if (requestFocus()) engine?.play(); updateControls()
             }
+            if (!desiredPlay || failed) setControlsVisible(true) else scheduleHide()
         }
         b.rewind.setOnClickListener { seek(position - 10_000) }
         b.forward.setOnClickListener { seek(position + 10_000) }
         b.core.setOnClickListener {
+            coreDialogOpen = true; handler.removeCallbacks(hideControls)
             AlertDialog.Builder(this).setTitle("切换播放核心").setSingleChoiceItems(arrayOf("系统 MediaPlayer", "ExoPlayer"), core.ordinal) { dialog, which ->
                 val chosen = Core.values()[which]
                 if (chosen != core) { capture(); save(); release(); core = chosen; store.core = chosen; failed = false; start() }
                 dialog.dismiss()
-            }.setNegativeButton("取消", null).show()
+            }.setNegativeButton("取消", null).create().apply { setOnDismissListener { coreDialogOpen = false; scheduleHide(); applyFullscreen() }; show() }
         }
         b.seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {}
-            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) { seek(duration * (seekBar?.progress ?: 0) / 1000) }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) { scrubbing = true; handler.removeCallbacks(hideControls) }
+            override fun onStopTrackingTouch(seekBar: SeekBar?) { scrubbing = false; seek(duration * (seekBar?.progress ?: 0) / 1000); scheduleHide() }
         })
-        b.toggle.requestFocus()
+        b.toggle.requestFocus(); updateControls()
     }
     private fun requestFocus(): Boolean {
         if (focusHeld) return true
@@ -108,9 +123,12 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
         if (desiredPlay) requestFocus()
         val listener = object : Engine.Listener {
             private fun current() = resumed && expected == attempt && engine != null
-            override fun ready() { if (current()) { ready = true; handler.removeCallbacks(timeout); b.seek.isEnabled = true; b.status.text = coreName(); updateControls() } }
-            override fun buffering(active: Boolean) { if (current()) b.status.text = if (active) "缓冲中 · ${coreName()}" else coreName() }
-            override fun ended() { if (current()) { capture(); position = duration; desiredPlay = false; save(); b.status.text = "播放结束"; updateControls() } }
+            override fun ready() { if (current()) { ready = true; handler.removeCallbacks(timeout); b.seek.isEnabled = true; b.status.text = coreName(); b.loading.visibility = View.GONE; updateControls(); scheduleHide() } }
+            override fun buffering(active: Boolean) { if (current()) {
+                b.status.text = if (active) "缓冲中 · ${coreName()}" else coreName()
+                b.loading.visibility = if (active) View.VISIBLE else View.GONE
+            } }
+            override fun ended() { if (current()) { capture(); position = duration; desiredPlay = false; save(); b.status.text = "播放结束"; updateControls(); setControlsVisible(true) } }
             override fun failed(message: String) { if (current()) fail(message) }
             override fun videoSize(width: Int, height: Int, pixelRatio: Float) {
                 if (current() && width > 0 && height > 0) { videoRatio = width * pixelRatio / height; fitVideo() }
@@ -123,7 +141,7 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     }
     private fun fail(message: String) {
         capture(); save(); release(); failed = true
-        b.status.text = message; b.toggle.text = "重试"; b.seek.isEnabled = false
+        b.status.text = message; b.loading.visibility = View.GONE; b.seek.isEnabled = false; updateControls(); setControlsVisible(true)
     }
     private fun coreName() = if (core == Core.SYSTEM) "系统 MediaPlayer" else "ExoPlayer"
     private fun seek(target: Long) {
@@ -141,8 +159,11 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     }
     private fun updateControls() {
         if (!::b.isInitialized) return
-        b.toggle.text = if (failed) "重试" else if (desiredPlay) "暂停" else "播放"
-        b.time.text = "${formatTime(position)} / ${formatTime(duration)}"
+        val icon = if (failed || (duration > 0 && position >= duration)) PlayerIcon.Kind.REPLAY else if (desiredPlay) PlayerIcon.Kind.PAUSE else PlayerIcon.Kind.PLAY
+        if (toggleKind != icon) { toggleKind = icon; b.toggle.setImageDrawable(PlayerIcon(icon)) }
+        b.toggle.contentDescription = if (failed) "重试" else if (icon == PlayerIcon.Kind.REPLAY) "重新播放" else if (desiredPlay) "暂停" else "播放"
+        b.time.text = formatTime(position)
+        b.totalTime.text = formatTime(duration)
         if (!b.seek.isPressed) b.seek.progress = if (duration > 0) (position * 1000 / duration).toInt() else 0
     }
     private fun release() {
@@ -160,11 +181,11 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     }
     override fun onResume() {
         super.onResume(); if (!::b.isInitialized) return
-        resumed = true; start(); handler.post(ticker)
+        resumed = true; applyFullscreen(); start(); handler.post(ticker); scheduleHide()
     }
     override fun onPause() {
         if (::b.isInitialized) {
-            save(); resumed = false; handler.removeCallbacks(ticker); release()
+            save(); resumed = false; handler.removeCallbacks(ticker); handler.removeCallbacks(hideControls); release()
             audio.abandonAudioFocus(focusListener); focusHeld = false; lostFocus = false
         }
         super.onPause()
@@ -173,15 +194,48 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     override fun surfaceCreated(holder: SurfaceHolder) { surfaceReady = true; start() }
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
     override fun surfaceDestroyed(holder: SurfaceHolder) { capture(); save(); surfaceReady = false; release() }
-    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        when (keyCode) {
-            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> { b.toggle.performClick(); return true }
-            KeyEvent.KEYCODE_MEDIA_PLAY -> { if (!desiredPlay || failed) b.toggle.performClick(); return true }
-            KeyEvent.KEYCODE_MEDIA_PAUSE -> { if (desiredPlay && !failed) b.toggle.performClick(); return true }
-            KeyEvent.KEYCODE_MEDIA_REWIND -> { b.rewind.performClick(); return true }
-            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { b.forward.performClick(); return true }
+    private fun scheduleHide() {
+        handler.removeCallbacks(hideControls)
+        if (controlsVisible && resumed && ready && desiredPlay && !failed && !scrubbing && !coreDialogOpen) handler.postDelayed(hideControls, 4000)
+    }
+    private fun setControlsVisible(visible: Boolean) {
+        controlsVisible = visible
+        b.controls.visibility = if (visible) View.VISIBLE else View.GONE
+        if (visible) { b.toggle.requestFocus(); scheduleHide() }
+        else { handler.removeCallbacks(hideControls); b.root.requestFocus() }
+        applyFullscreen()
+    }
+    private fun applyFullscreen() {
+        var flags = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        if (Build.VERSION.SDK_INT >= 19) flags = flags or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        window.decorView.systemUiVisibility = flags
+    }
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && ::b.isInitialized) applyFullscreen()
+    }
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (::b.isInitialized && controlsVisible && event.actionMasked == MotionEvent.ACTION_DOWN) scheduleHide()
+        return super.dispatchTouchEvent(event)
+    }
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (!::b.isInitialized) return super.dispatchKeyEvent(event)
+        val navigation = event.keyCode in arrayOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+            KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER)
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            if (navigation && !controlsVisible) { setControlsVisible(true); return true }
+            if (controlsVisible) scheduleHide()
+            when (event.keyCode) {
+                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> { b.toggle.performClick(); return true }
+                KeyEvent.KEYCODE_MEDIA_PLAY -> { if (!desiredPlay || failed) b.toggle.performClick(); return true }
+                KeyEvent.KEYCODE_MEDIA_PAUSE -> { if (desiredPlay && !failed) b.toggle.performClick(); return true }
+                KeyEvent.KEYCODE_MEDIA_REWIND -> { b.rewind.performClick(); return true }
+                KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { b.forward.performClick(); return true }
+                KeyEvent.KEYCODE_BACK -> { if (!controlsVisible) setControlsVisible(true) else finish(); return true }
+            }
         }
-        return super.onKeyDown(keyCode, event)
+        return super.dispatchKeyEvent(event)
     }
     companion object {
         fun launch(context: Activity, work: Work, episode: Episode, position: Long = 0) {

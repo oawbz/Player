@@ -1,18 +1,25 @@
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#000000">
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#000000" android:focusable="true" android:focusableInTouchMode="true">
     <SurfaceView android:id="@+id/surface" android:layout_width="match_parent" android:layout_height="match_parent" />
-    <LinearLayout android:id="@+id/controls" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="bottom" android:orientation="vertical" android:padding="16dp" android:background="#DD10151D">
-        <TextView android:id="@+id/title" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="18sp" />
-        <TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="14sp" android:textColor="#B1C1CE" />
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
-            <TextView android:id="@+id/time" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="00:00 / 00:00" />
-            <SeekBar android:id="@+id/seek" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:max="1000" />
+    <View android:id="@+id/tapArea" android:layout_width="match_parent" android:layout_height="match_parent" android:contentDescription="显示或隐藏播放控制" android:clickable="true" android:focusable="false" />
+    <ProgressBar android:id="@+id/loading" android:layout_width="48dp" android:layout_height="48dp" android:layout_gravity="center" android:visibility="gone" />
+    <FrameLayout android:id="@+id/controls" android:layout_width="match_parent" android:layout_height="match_parent">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="76dp" android:layout_gravity="top" android:gravity="center_vertical" android:paddingLeft="12dp" android:paddingRight="12dp" android:paddingBottom="12dp" android:background="@drawable/player_top_scrim" android:clickable="true">
+            <ImageButton android:id="@+id/back" style="@style/PlayerIconButton" android:contentDescription="返回" />
+            <TextView android:id="@+id/title" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:layout_marginLeft="12dp" android:layout_marginRight="12dp" android:textSize="18sp" android:textColor="#FFFFFF" android:maxLines="1" android:ellipsize="end" />
+            <ImageButton android:id="@+id/core" style="@style/PlayerIconButton" android:contentDescription="切换播放核心" />
         </LinearLayout>
-        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center">
-            <Button android:id="@+id/back" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="返回" />
-            <Button android:id="@+id/rewind" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="后退 10 秒" />
-            <Button android:id="@+id/toggle" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="暂停" />
-            <Button android:id="@+id/forward" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="前进 10 秒" />
-            <Button android:id="@+id/core" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="切换核心" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="bottom" android:orientation="vertical" android:paddingLeft="24dp" android:paddingRight="24dp" android:paddingTop="20dp" android:paddingBottom="8dp" android:background="@drawable/player_bottom_scrim" android:clickable="true">
+            <TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="12sp" android:textColor="#D0D0D0" android:maxLines="2" android:gravity="center" />
+            <LinearLayout android:layout_width="match_parent" android:layout_height="40dp" android:gravity="center_vertical">
+                <TextView android:id="@+id/time" android:layout_width="64dp" android:layout_height="wrap_content" android:text="00:00" android:textColor="#FFFFFF" android:textSize="13sp" />
+                <SeekBar android:id="@+id/seek" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:max="1000" android:contentDescription="播放进度" />
+                <TextView android:id="@+id/totalTime" android:layout_width="64dp" android:layout_height="wrap_content" android:text="00:00" android:textColor="#FFFFFF" android:textSize="13sp" android:gravity="right" />
+            </LinearLayout>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="64dp" android:gravity="center">
+                <ImageButton android:id="@+id/rewind" style="@style/PlayerIconButton" android:layout_marginRight="28dp" android:contentDescription="后退 10 秒" />
+                <ImageButton android:id="@+id/toggle" style="@style/PlayerIconButton" android:layout_width="60dp" android:layout_height="60dp" android:padding="14dp" android:contentDescription="暂停" />
+                <ImageButton android:id="@+id/forward" style="@style/PlayerIconButton" android:layout_marginLeft="28dp" android:contentDescription="前进 10 秒" />
+            </LinearLayout>
         </LinearLayout>
-    </LinearLayout>
+    </FrameLayout>
 </FrameLayout>

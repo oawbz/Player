@@ -6,4 +6,12 @@
         <item name="android:textColor">#F1F5F9</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
+    <style name="PlayerIconButton">
+        <item name="android:layout_width">48dp</item>
+        <item name="android:layout_height">48dp</item>
+        <item name="android:padding">12dp</item>
+        <item name="android:background">@drawable/player_button</item>
+        <item name="android:scaleType">fitCenter</item>
+        <item name="android:focusable">true</item>
+    </style>
 </resources>
