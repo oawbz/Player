@@ -49,7 +49,7 @@ class SettingsActivity : BaseActivity() {
             })
         }
         b.content.addView(button("添加分类") { chooseConnection(null) })
-        b.content.addView(text("作品简介：在作品文件夹中放入 description.txt（UTF-8，最多 64 KB）。\n账号密码保存在应用私有区域，禁止系统备份；旧系统无法抵抗 root 或设备被控制。", 14f))
+        b.content.addView(text("影片资料：在作品目录放入 movie.nfo 或 tvshow.nfo（Kodi XML，UTF-8，最多 512 KB），用于简介、评分、年份和时长。\n账号密码保存在应用私有区域，禁止系统备份；旧系统无法抵抗 root 或设备被控制。", 14f))
     }
     private fun chooseConnection(category: Category?) {
         val connections = store.connections()
