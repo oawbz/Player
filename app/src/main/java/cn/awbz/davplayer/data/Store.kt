@@ -15,14 +15,14 @@ class Store(context: Context, private val writer: ExecutorService) {
         get() = runCatching { Core.valueOf(prefs.getString("core", Core.SYSTEM.name)!!) }.getOrDefault(Core.SYSTEM)
         set(value) { prefs.edit().putString("core", value.name).apply() }
     fun connections(): List<Connection> = array("connections").objects().map {
-        Connection(it.getString("id"), it.getString("name"), it.getString("url"), it.optString("user"), it.optString("password"))
+        Connection(it.getString("id"), it.getString("name"), it.getString("url"), it.optString("user"), it.optString("password"), AuthMode.stored(it.optString("authMode"), it.optString("user"), it.optString("password")))
     }
     fun connection(id: String): Connection? = connections().firstOrNull { it.id == id }
     fun saveConnection(connection: Connection) {
         val existing = connections()
         val list = if (existing.any { it.id == connection.id }) existing.map { if (it.id == connection.id) connection else it } else existing + connection
         prefs.edit().putString("connections", JSONArray().apply { list.forEach { c -> put(JSONObject()
-            .put("id", c.id).put("name", c.name).put("url", c.baseUrl).put("user", c.username).put("password", c.password)) } }.toString()).apply()
+            .put("id", c.id).put("name", c.name).put("url", c.baseUrl).put("authMode", c.authMode.name).put("user", if (c.authMode == AuthMode.BASIC) c.username else "").put("password", if (c.authMode == AuthMode.BASIC) c.password else "")) } }.toString()).apply()
     }
     fun categories(): List<Category> = array("categories").objects().map {
         Category(it.getString("id"), it.getString("name"), it.getString("connection"), it.getString("path"))

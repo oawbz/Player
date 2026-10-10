@@ -4,7 +4,16 @@ import okhttp3.HttpUrl
 import java.util.Locale
 
 // Credentials never enter intents, media IDs, cache keys or display strings.
-data class Connection(val id: String, val name: String, val baseUrl: String, val username: String, val password: String)
+enum class AuthMode { ANONYMOUS, BASIC;
+    companion object {
+        fun stored(value: String?, username: String, password: String): AuthMode =
+            values().firstOrNull { it.name == value } ?: if (username.isEmpty() && password.isEmpty()) ANONYMOUS else BASIC
+    }
+}
+data class Connection(val id: String, val name: String, val baseUrl: String, val username: String, val password: String,
+    val authMode: AuthMode = AuthMode.stored(null, username, password)) {
+    override fun toString() = "Connection(id=$id, authMode=$authMode)"
+}
 data class Category(val id: String, val name: String, val connectionId: String, val path: String)
 data class DavEntry(val url: HttpUrl, val name: String, val directory: Boolean)
 data class Episode(val path: String, val name: String, val season: String = "")

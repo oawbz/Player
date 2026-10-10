@@ -8,6 +8,9 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
+import android.widget.ScrollView
 import cn.awbz.davplayer.data.*
 import cn.awbz.davplayer.databinding.ActivityPageBinding
 import java.util.UUID
@@ -29,7 +32,7 @@ class SettingsActivity : BaseActivity() {
             }.setNegativeButton("取消", null).show()
         })
         b.content.addView(text("WebDAV 连接", 22f))
-        store.connections().forEach { connection -> b.content.addView(button(connection.name) { editConnection(connection) }) }
+        store.connections().forEach { connection -> b.content.addView(button(connection.name + if (connection.authMode == AuthMode.ANONYMOUS) " · 匿名访问" else " · 用户名密码") { editConnection(connection) }) }
         b.content.addView(button("添加 WebDAV 连接") { editConnection(null) })
         b.content.addView(text("分类", 22f))
         store.categories().forEach { category ->
@@ -65,28 +68,46 @@ class SettingsActivity : BaseActivity() {
         }
         val name = input("连接名称", old?.name ?: "")
         val url = input("WebDAV 地址（含根目录）", old?.baseUrl ?: "", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
-        val user = input("用户名（可留空）", old?.username ?: "")
+        val mode = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL; container.addView(this) }
+        mode.addView(RadioButton(this).apply { id = 1001; text = "匿名访问" })
+        mode.addView(RadioButton(this).apply { id = 1002; text = "用户名密码" })
+        val user = input("用户名", old?.username ?: "")
         val password = input("密码（可留空）", old?.password ?: "", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
         val note = text("先测试连接，成功后保存。使用 HTTP 时账号和视频会以明文传输。", 14f); container.addView(note)
-        val dialog = AlertDialog.Builder(this).setTitle(if (old == null) "添加连接" else "编辑连接").setView(container)
+        fun updateMode() {
+            val authenticated = mode.checkedRadioButtonId == 1002
+            user.visibility = if (authenticated) View.VISIBLE else View.GONE
+            password.visibility = if (authenticated) View.VISIBLE else View.GONE
+        }
+        mode.setOnCheckedChangeListener { _, _ -> updateMode() }
+        mode.check(if (old?.authMode == AuthMode.BASIC) 1002 else 1001)
+        updateMode()
+        val scroll = ScrollView(this).apply { addView(container) }
+        val dialog = AlertDialog.Builder(this).setTitle(if (old == null) "添加连接" else "编辑连接").setView(scroll)
             .setNegativeButton("取消", null).setPositiveButton("测试并保存", null).create()
+        fun enableForm(enabled: Boolean) {
+            listOf(name, url, user, password).forEach { it.isEnabled = enabled }
+            for (i in 0 until mode.childCount) mode.getChildAt(i).isEnabled = enabled
+        }
         dialog.setOnShowListener {
             dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 try {
                     val label = name.text.toString().trim()
                     if (label.isEmpty() || label.length > 80) { name.error = "请输入 1～80 个字符"; return@setOnClickListener }
+                    val authMode = if (mode.checkedRadioButtonId == 1002) AuthMode.BASIC else AuthMode.ANONYMOUS
+                    if (authMode == AuthMode.BASIC && user.text.toString().isBlank()) { user.error = "请输入用户名"; return@setOnClickListener }
                     val base = DavUrls.base(url.text.toString())
                     val changedRoot = old != null && base.toString() != old.baseUrl
                     val connection = Connection(if (changedRoot || old == null) UUID.randomUUID().toString() else old.id,
-                        label, base.toString(), user.text.toString(), password.text.toString())
-                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false; note.text = "正在测试连接…"
+                        label, base.toString(), if (authMode == AuthMode.BASIC) user.text.toString() else "", if (authMode == AuthMode.BASIC) password.text.toString() else "", authMode)
+                    enableForm(false); dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false; note.text = "正在测试连接…"
                     job({ library.dav.list(connection, base.encodedPath(), it) }, {
                         if (dialog.isShowing) {
                             // A different endpoint is a new connection; old categories and credentials remain recoverable.
-                            store.saveConnection(connection); library.clear(); dialog.dismiss(); render()
+                            store.saveConnection(connection); library.clear(); app.posters.clear(); dialog.dismiss(); render()
                         }
-                    }, { message -> if (dialog.isShowing) { note.text = message; dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true } })
+                    }, { message -> if (dialog.isShowing) { enableForm(true); note.text = message; dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true } })
                 } catch (e: DavFailure) { note.text = e.userMessage }
             }
         }

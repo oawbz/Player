@@ -30,11 +30,8 @@ docker run --rm --platform linux/amd64 --network host \
     test -d "$ANDROID_HOME/platforms/android-34"
     test -x "$ANDROID_HOME/build-tools/34.0.0/aapt"
     if [[ ! -f /root/.android/debug.keystore ]]; then
-      keytool -genkeypair -keystore /root/.android/debug.keystore \
-        -storepass android -alias androiddebugkey -keypass android \
-        -dname "CN=Android Debug,O=DavPlayer,C=CN" \
-        -keyalg RSA -keysize 2048 -validity 10000
-      chmod 600 /root/.android/debug.keystore
+      echo "Signing key missing: restore the existing local signing/debug.keystore before building" >&2
+      exit 1
     fi
     ./gradlew --no-daemon "$@"
   ' _ "$@"

@@ -22,7 +22,7 @@ class DavClient {
         .readTimeout(25, TimeUnit.SECONDS).writeTimeout(15, TimeUnit.SECONDS).callTimeout(35, TimeUnit.SECONDS)
         .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false).build()
     val mediaTransport = transport.newBuilder().callTimeout(0, TimeUnit.SECONDS).build()
-    fun headers(connection: Connection): Map<String, String> = if (connection.username.isEmpty() && connection.password.isEmpty()) emptyMap()
+    fun headers(connection: Connection): Map<String, String> = if (connection.authMode == AuthMode.ANONYMOUS) emptyMap()
         else mapOf("Authorization" to Credentials.basic(connection.username, connection.password))
     private fun request(connection: Connection, url: HttpUrl): Request.Builder {
         if (!DavUrls.inside(DavUrls.base(connection.baseUrl), url)) throw DavFailure("资源不在当前 WebDAV 连接范围内")
