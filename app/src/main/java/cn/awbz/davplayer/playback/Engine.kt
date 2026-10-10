@@ -35,6 +35,7 @@ interface Engine {
 class SystemEngine(private val context: Context, private val listener: Engine.Listener) : Engine {
     private val media = MediaPlayer()
     private val io = Executors.newSingleThreadExecutor()
+    @Volatile private var activeCall: okhttp3.Call? = null
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var released = false
     private var prepared = false
@@ -64,12 +65,20 @@ class SystemEngine(private val context: Context, private val listener: Engine.Li
             }; true
         }
         media.setOnVideoSizeChangedListener { _, width, height -> if (!released) listener.videoSize(width, height, 1f) }
-        val url = DavUrls.fromPath(connection, path).toString()
-        val headers = DavClient().headers(connection)
+        val url = DavUrls.fromPath(connection, path)
         io.execute {
             try {
-                if (!released) { media.setDataSource(context, android.net.Uri.parse(url), headers); if (!released) media.prepareAsync() }
-            } catch (_: Exception) { main.post { if (!released) listener.failed("系统核心无法打开媒体，请检查认证、网络或格式") } }
+                if (!released) {
+                    MediaRequests.open(DavClient(), connection, url, "bytes=0-0") { activeCall = it; if (released) it.cancel() }.use { response ->
+                        if (!response.isSuccessful) throw DavFailure("媒体请求失败（HTTP ${response.code()}）")
+                        val headers = mutableMapOf("android-allow-cross-domain-redirect" to "0")
+                        response.request().header("Authorization")?.let { headers["Authorization"] = it }
+                        if (!released) media.setDataSource(context, android.net.Uri.parse(response.request().url().toString()), headers)
+                    }
+                    activeCall = null
+                    if (!released) media.prepareAsync()
+                }
+            } catch (e: Exception) { main.post { if (!released) listener.failed((e as? DavFailure)?.userMessage ?: "系统核心无法打开媒体，请检查认证、网络或格式") } }
         }
     }
     private fun finishPrepare() {
@@ -85,7 +94,7 @@ class SystemEngine(private val context: Context, private val listener: Engine.Li
     override val duration: Long get() = if (prepared && !released) runCatching { media.duration.toLong().coerceAtLeast(0) }.getOrDefault(0) else 0
     override val playing: Boolean get() = prepared && !released && runCatching { media.isPlaying }.getOrDefault(false)
     override fun release() {
-        released = true; prepared = false
+        released = true; prepared = false; activeCall?.cancel(); activeCall = null
         media.setOnPreparedListener(null); media.setOnCompletionListener(null); media.setOnErrorListener(null)
         media.setOnInfoListener(null); media.setOnSeekCompleteListener(null); media.setOnVideoSizeChangedListener(null)
         // Serialize against setDataSource/prepare; never wait for native network work on the UI thread.
@@ -108,7 +117,10 @@ class ExoEngine(private val context: Context, private val dav: DavClient, privat
                 if (state == Player.STATE_ENDED) listener.ended()
             }
             override fun onPlayerError(error: PlaybackException) {
-                if (player === exo) listener.failed("ExoPlayer 无法播放（错误 ${error.errorCode}），请检查网络、认证、文件格式或手动切换核心")
+                if (player === exo) {
+                    val davError = generateSequence(error as Throwable) { it.cause }.filterIsInstance<DavFailure>().firstOrNull()
+                    listener.failed(davError?.userMessage ?: "ExoPlayer 无法播放（错误 ${error.errorCode}），请检查网络、认证、文件格式或手动切换核心")
+                }
             }
             override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
                 if (player === exo) listener.videoSize(videoSize.width, videoSize.height, videoSize.pixelWidthHeightRatio)

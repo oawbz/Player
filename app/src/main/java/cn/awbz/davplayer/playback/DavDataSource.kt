@@ -7,7 +7,6 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import cn.awbz.davplayer.data.*
 import okhttp3.Call
-import okhttp3.Request
 import okhttp3.Response
 import java.io.EOFException
 import java.io.IOException
@@ -27,12 +26,9 @@ class DavDataSource(private val connection: Connection, private val dav: DavClie
         val url = okhttp3.HttpUrl.parse(dataSpec.uri.toString()) ?: throw DavFailure("媒体地址无效")
         if (!DavUrls.inside(DavUrls.base(connection.baseUrl), url)) throw DavFailure("媒体不在当前 WebDAV 连接范围内")
         if (dataSpec.httpMethod != DataSpec.HTTP_METHOD_GET) throw DavFailure("仅支持文件 GET 播放")
-        val builder = Request.Builder().url(url).header("Accept-Encoding", "identity")
-        dav.headers(connection).forEach { (key, value) -> builder.header(key, value) }
-        ByteRanges.header(dataSpec.position, dataSpec.length)?.let { builder.header("Range", it) }
-        val call = dav.mediaTransport.newCall(builder.get().build()); activeCall = call
         try {
-            val result = call.execute(); response = result
+            val result = MediaRequests.open(dav, connection, url, ByteRanges.header(dataSpec.position, dataSpec.length)) { activeCall = it }
+            response = result
             if (!result.isSuccessful) throw DavFailure("媒体请求失败（HTTP ${result.code()}）")
             ByteRanges.validate(dataSpec.position, result.code(), result.header("Content-Range"))
             val body = result.body() ?: throw DavFailure("媒体响应为空")
