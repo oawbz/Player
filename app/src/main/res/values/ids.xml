@@ -1,0 +1,4 @@
+<resources>
+    <item name="auth_anonymous" type="id" />
+    <item name="auth_basic" type="id" />
+</resources>

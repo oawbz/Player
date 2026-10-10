@@ -12,6 +12,7 @@ import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.ScrollView
 import cn.awbz.davplayer.data.*
+import cn.awbz.davplayer.R
 import cn.awbz.davplayer.databinding.ActivityPageBinding
 import java.util.UUID
 
@@ -69,18 +70,18 @@ class SettingsActivity : BaseActivity() {
         val name = input("连接名称", old?.name ?: "")
         val url = input("WebDAV 地址（含根目录）", old?.baseUrl ?: "", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
         val mode = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL; container.addView(this) }
-        mode.addView(RadioButton(this).apply { id = 1001; text = "匿名访问" })
-        mode.addView(RadioButton(this).apply { id = 1002; text = "用户名密码" })
+        mode.addView(RadioButton(this).apply { id = R.id.auth_anonymous; text = "匿名访问" })
+        mode.addView(RadioButton(this).apply { id = R.id.auth_basic; text = "用户名密码" })
         val user = input("用户名", old?.username ?: "")
         val password = input("密码（可留空）", old?.password ?: "", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
         val note = text("先测试连接，成功后保存。使用 HTTP 时账号和视频会以明文传输。", 14f); container.addView(note)
         fun updateMode() {
-            val authenticated = mode.checkedRadioButtonId == 1002
+            val authenticated = mode.checkedRadioButtonId == R.id.auth_basic
             user.visibility = if (authenticated) View.VISIBLE else View.GONE
             password.visibility = if (authenticated) View.VISIBLE else View.GONE
         }
         mode.setOnCheckedChangeListener { _, _ -> updateMode() }
-        mode.check(if (old?.authMode == AuthMode.BASIC) 1002 else 1001)
+        mode.check(if (old?.authMode == AuthMode.BASIC) R.id.auth_basic else R.id.auth_anonymous)
         updateMode()
         val scroll = ScrollView(this).apply { addView(container) }
         val dialog = AlertDialog.Builder(this).setTitle(if (old == null) "添加连接" else "编辑连接").setView(scroll)
@@ -95,7 +96,7 @@ class SettingsActivity : BaseActivity() {
                 try {
                     val label = name.text.toString().trim()
                     if (label.isEmpty() || label.length > 80) { name.error = "请输入 1～80 个字符"; return@setOnClickListener }
-                    val authMode = if (mode.checkedRadioButtonId == 1002) AuthMode.BASIC else AuthMode.ANONYMOUS
+                    val authMode = if (mode.checkedRadioButtonId == R.id.auth_basic) AuthMode.BASIC else AuthMode.ANONYMOUS
                     if (authMode == AuthMode.BASIC && user.text.toString().isBlank()) { user.error = "请输入用户名"; return@setOnClickListener }
                     val base = DavUrls.base(url.text.toString())
                     val changedRoot = old != null && base.toString() != old.baseUrl
