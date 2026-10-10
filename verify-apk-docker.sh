@@ -3,7 +3,7 @@ set -euo pipefail
 if [[ "$(uname -s)" != Linux || "$PWD" != /srv/davplayer ]]; then
   echo 'Run in /srv/davplayer on 天翼云' >&2; exit 1
 fi
-image='ghcr.io/cirruslabs/android-sdk@sha256:8f3fb92fc5c21ee8b9cfe560947ecd0ded39c1b0df7d20d937b8217c8c57c49b'
+image='davplayer-android:34-temurin17.0.20.1-1'
 docker run --rm --platform linux/amd64 --network host --volume "$PWD:/workspace:ro" --workdir /workspace "$image" bash -lc '
   set -euo pipefail
   apk=app/build/outputs/apk/debug/app-debug.apk

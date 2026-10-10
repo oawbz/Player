@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 remote_workspace=/srv/davplayer
-image='ghcr.io/cirruslabs/android-sdk@sha256:8f3fb92fc5c21ee8b9cfe560947ecd0ded39c1b0df7d20d937b8217c8c57c49b'
+image='davplayer-android:34-temurin17.0.20.1-1'
 if [[ "$(uname -s)" != Linux || "$PWD" != "$remote_workspace" ]]; then
   echo "Run this script in the dedicated 天翼云 workspace: $remote_workspace" >&2
   exit 1
 fi
 command -v docker >/dev/null
+if ! docker image inspect "$image" >/dev/null 2>&1; then
+  docker build --network host --tag "$image" docker/
+fi
 cache_dir="${GRADLE_USER_HOME:-$remote_workspace/cache/gradle}"
 mkdir -p "$cache_dir" signing
 chmod 700 signing

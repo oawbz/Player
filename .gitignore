@@ -11,3 +11,5 @@ cache/
 .codex/
 .agents/
 .aws/
+reports/
+source-upload.b64

@@ -61,11 +61,13 @@
 
 只在天翼云（SPanel server_id=19）的独立目录 `/srv/davplayer` 构建，不使用本机 Android SDK/NDK，不复用 my-tv 目录。
 
-固定组合：AGP 8.3.2 / Gradle 8.4 / Kotlin 1.9.22 / JDK 17，compileSdk 34、targetSdk 33、minSdk 18、Java 字节码目标 8。Gradle 分发包固定 SHA256。Docker 镜像固定为：
+固定组合：AGP 8.3.2 / Gradle 8.4 / Kotlin 1.9.22 / JDK 17，compileSdk 34、targetSdk 33、minSdk 18、Java 字节码目标 8。Gradle 分发包固定 SHA256。基础 SDK 镜像固定为：
 
 ```text
 ghcr.io/cirruslabs/android-sdk@sha256:8f3fb92fc5c21ee8b9cfe560947ecd0ded39c1b0df7d20d937b8217c8c57c49b
 ```
+
+基础镜像实际包含 JDK 21，项目通过 `docker/Dockerfile` 加入固定的 Eclipse Temurin 17.0.20.1+1，下载包 SHA256 固定为 `3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e`。首轮构建自动生成项目专用镜像 `davplayer-android:34-temurin17.0.20.1-1`，不改变其他项目镜像或服务。来源为 [Temurin 官方发布](https://github.com/adoptium/temurin17-binaries/releases/tag/jdk-17.0.20.1%2B1)。
 
 Media3 固定 1.2.1，仅 ExoPlayer 文件播放；项目自行实现小型文件数据源，使用严格固定的 OkHttp 3.12.13。官方 media3-datasource-okhttp 1.2.1 发布 AAR 的 minSdk 为 21，因此不引入该模块。数据源传递认证，验证 Range 206 与 Content-Range 起点，拒绝跳转时返回完整 200 文件。API 18 运行时 API 与完整依赖图仍须核验，不能靠版本号或 overrideLibrary 绕过最低要求。MultiDexApplication 已初始化，debug 启用 v1/v2 签名。
 
