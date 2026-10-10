@@ -20,8 +20,12 @@ class DavDataSource(private val connection: Connection, private val dav: DavClie
     private var uri: Uri? = null
     private var remaining = C.LENGTH_UNSET.toLong()
     private var opened = false
+    private var readBytes = 0L
+    private var lastTrace = 0L
     @Volatile private var activeCall: Call? = null
     override fun open(dataSpec: DataSpec): Long {
+        readBytes = 0; lastTrace = android.os.SystemClock.elapsedRealtime()
+        PlaybackTrace.write("open position=${dataSpec.position} length=${dataSpec.length}")
         transferInitializing(dataSpec)
         val url = okhttp3.HttpUrl.parse(dataSpec.uri.toString()) ?: throw DavFailure("媒体地址无效")
         if (!DavUrls.inside(DavUrls.base(connection.baseUrl), url)) throw DavFailure("媒体不在当前 WebDAV 连接范围内")
@@ -48,11 +52,15 @@ class DavDataSource(private val connection: Connection, private val dav: DavClie
             return C.RESULT_END_OF_INPUT
         }
         if (remaining >= 0) remaining -= count
+        readBytes += count
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastTrace >= 5000) { PlaybackTrace.write("read bytes=$readBytes remaining=$remaining"); lastTrace = now }
         bytesTransferred(count); return count
     }
     override fun getUri(): Uri? = uri
     override fun getResponseHeaders(): Map<String, List<String>> = response?.headers()?.toMultimap() ?: emptyMap()
     override fun close() {
+        PlaybackTrace.write("close bytes=$readBytes remaining=$remaining")
         activeCall?.cancel(); activeCall = null
         runCatching { stream?.close() }; stream = null
         response?.close(); response = null; uri = null

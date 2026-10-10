@@ -21,6 +21,7 @@ object MediaRequests {
             range?.let { builder.header("Range", it) }
             val call = dav.mediaTransport.newCall(builder.get().build()); onCall(call)
             val result = call.execute()
+            PlaybackTrace.write("GET hop=$hop http=${result.code()} range=${range ?: "none"} length=${result.body()?.contentLength() ?: -1}")
             if (result.code() !in redirects) return result
             val location = result.header("Location")
             result.close()

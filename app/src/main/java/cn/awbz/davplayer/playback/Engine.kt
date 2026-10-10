@@ -105,10 +105,19 @@ class SystemEngine(private val context: Context, private val listener: Engine.Li
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class ExoEngine(private val context: Context, private val dav: DavClient, private val listener: Engine.Listener) : Engine {
     private var player: ExoPlayer? = null
+    private val traceHandler = Handler(Looper.getMainLooper())
+    private val trace = object : Runnable {
+        override fun run() {
+            val current = player ?: return
+            PlaybackTrace.write("state=${current.playbackState} play=${current.playWhenReady} playing=${current.isPlaying} position=${current.currentPosition} buffered=${current.bufferedPosition} duration=${current.duration}")
+            traceHandler.postDelayed(this, 5000)
+        }
+    }
     override fun start(connection: Connection, path: String, holder: SurfaceHolder, position: Long, playing: Boolean) {
         val factory = DavDataSource.Factory(connection, dav)
         val exo = ExoPlayer.Builder(context).setMediaSourceFactory(DefaultMediaSourceFactory(factory)).build()
         player = exo
+        traceHandler.post(trace)
         exo.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 if (player !== exo) return
@@ -136,5 +145,5 @@ class ExoEngine(private val context: Context, private val dav: DavClient, privat
     override val position get() = player?.currentPosition?.coerceAtLeast(0) ?: 0
     override val duration get() = player?.duration?.takeIf { it > 0 } ?: 0
     override val playing get() = player?.isPlaying ?: false
-    override fun release() { val old = player; player = null; old?.release() }
+    override fun release() { traceHandler.removeCallbacks(trace); val old = player; player = null; old?.release() }
 }
