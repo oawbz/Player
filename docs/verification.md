@@ -15,9 +15,19 @@
 
 编译过程修复了两项兼容性问题：官方 Media3 OkHttp 数据源 AAR 要求 API 21，已移除并使用项目文件数据源；系统 MediaPlayer 改用公开的 `setDataSource(Context, Uri, Map)` 传递认证头。固定 SDK 基础镜像实际使用 JDK 21，因此项目派生镜像增加经 SHA256 校验的固定 JDK 17，保持既定 AGP/Gradle 组合。
 
+## 2026-10-10：USB 播放故障与 302 修复
+
+- USB 设备为一加 PJZ110，Android 16 / API 36；未替代 API 18 验收。
+- 故障日志明确为视频 GET 返回 HTTP 302，DavDataSource 拒绝响应，ExoPlayer 报 Source error / 2000。
+- 0.1.2 支持视频 GET 最多 5 次重定向、签名下载 URL、Range 保留；跨源永久去除该请求链的 DAV 认证，禁止 HTTPS 降级、内嵌凭据和循环。目录请求策略不变。
+- 系统核心后台解析最终视频地址后使用公开 MediaPlayer API，禁止再次跨域自动跳转；该核心的真实播放尚未完成验收。
+- Docker `testDebugUnitTest lintDebug assembleDebug` 通过，20 项单元测试无失败，minSdk 18，v1/v2 签名通过。新增测试覆盖同源/跨源认证、签名下载地址、Range、循环和 URL 内嵌凭据拒绝。
+- 302 修复 APK 已通过 `adb -s` 覆盖安装，保留原配置。用户随后报告播放恢复；首帧缓冲与网络相关为用户判断，未通过吞吐测量证明。
+- 后续诊断构建增加仅含状态码、Range、字节计数和播放缓冲状态的 debug 日志，不记录 URL、认证头或凭据；构建通过，未打断当前播放安装。
+
 ## 尚未完成的验收
 
-构建、测试和 APK 检查不代表真实设备/服务可用。尚未安装到 API 18 真机，也未连接实际 WebDAV 服务。
+构建、测试和 APK 检查不代表真实设备/服务可用。尚未安装到 API 18 真机。API 36 的实际 WebDAV 播放已有用户恢复反馈，双核心完整验收仍未完成。
 
 1. API 18 安装、启动、MultiDex、双核心类加载及旧系统 HTTPS/TLS。
 2. 实际 WebDAV 的中文与特殊路径、目录权限、认证、刷新、响应边界与取消请求。
