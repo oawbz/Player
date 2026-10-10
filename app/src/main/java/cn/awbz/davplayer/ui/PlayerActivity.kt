@@ -116,7 +116,7 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
                 if (current() && width > 0 && height > 0) { videoRatio = width * pixelRatio / height; fitVideo() }
             }
         }
-        val created: Engine = if (core == Core.SYSTEM) SystemEngine(listener) else ExoEngine(this, library.dav, listener)
+        val created: Engine = if (core == Core.SYSTEM) SystemEngine(this, listener) else ExoEngine(this, library.dav, listener)
         engine = created
         try { created.start(connection, episode.path, b.surface.holder, position, desiredPlay); handler.postDelayed(timeout, 25_000) }
         catch (_: Exception) { fail("无法打开当前媒体，请检查地址、认证或文件格式") }

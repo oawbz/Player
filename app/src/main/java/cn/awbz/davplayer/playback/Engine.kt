@@ -32,7 +32,7 @@ interface Engine {
 }
 
 /** One adapter instance per attempt. Release invalidates every pending native callback. */
-class SystemEngine(private val listener: Engine.Listener) : Engine {
+class SystemEngine(private val context: Context, private val listener: Engine.Listener) : Engine {
     private val media = MediaPlayer()
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -68,7 +68,7 @@ class SystemEngine(private val listener: Engine.Listener) : Engine {
         val headers = DavClient().headers(connection)
         io.execute {
             try {
-                if (!released) { media.setDataSource(url, headers); if (!released) media.prepareAsync() }
+                if (!released) { media.setDataSource(context, android.net.Uri.parse(url), headers); if (!released) media.prepareAsync() }
             } catch (_: Exception) { main.post { if (!released) listener.failed("系统核心无法打开媒体，请检查认证、网络或格式") } }
         }
     }
