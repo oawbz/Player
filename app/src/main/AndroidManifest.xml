@@ -1,0 +1,20 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <application android:name=".DavApplication" android:allowBackup="false"
+        android:label="云影" android:icon="@drawable/ic_app" android:banner="@drawable/tv_banner"
+        android:theme="@style/AppTheme" android:usesCleartextTraffic="true">
+        <activity android:name=".ui.PlayerActivity" android:screenOrientation="sensorLandscape" android:exported="false" />
+        <activity android:name=".ui.DetailActivity" android:exported="false" />
+        <activity android:name=".ui.CategoryActivity" android:exported="false" />
+        <activity android:name=".ui.DirectoryActivity" android:exported="false" />
+        <activity android:name=".ui.SettingsActivity" android:exported="false" />
+        <activity android:name=".ui.MainActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

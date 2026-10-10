@@ -1,0 +1,9 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="144dp" android:layout_height="wrap_content" android:orientation="vertical" android:padding="6dp" android:background="@drawable/focus_card" android:focusable="true" android:clickable="true">
+    <FrameLayout android:layout_width="match_parent" android:layout_height="180dp" android:background="#263443">
+        <TextView android:layout_width="match_parent" android:layout_height="match_parent" android:text="云影" android:textColor="#668395" android:textSize="28sp" android:gravity="center" />
+        <ImageView android:id="@+id/image" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitCenter" android:contentDescription="作品封面" />
+    </FrameLayout>
+    <TextView android:id="@+id/title" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingTop="8dp" android:textSize="16sp" android:maxLines="2" android:ellipsize="end" />
+    <TextView android:id="@+id/subtitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="12sp" android:textColor="#B1C1CE" android:maxLines="2" android:ellipsize="end" />
+    <ProgressBar android:id="@+id/progress" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="4dp" android:max="1000" android:visibility="gone" />
+</LinearLayout>
