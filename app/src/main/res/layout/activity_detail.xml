@@ -1,0 +1,30 @@
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#08090B">
+    <ScrollView android:id="@+id/scroll" android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical">
+            <FrameLayout android:id="@+id/hero" android:layout_width="match_parent" android:layout_height="440dp" android:background="#18202B">
+                <ImageView android:id="@+id/cover" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="centerCrop" android:contentDescription="影片封面" />
+                <View android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/detail_hero_scrim" />
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="bottom" android:orientation="vertical" android:padding="24dp">
+                    <TextView android:id="@+id/title" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="30sp" android:textStyle="bold" android:textColor="#FFFFFF" />
+                    <TextView android:id="@+id/metadata" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:textSize="14sp" android:textColor="#E0E0E0" />
+                    <TextView android:id="@+id/genres" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:textSize="14sp" android:textColor="#AAAAAA" />
+                </LinearLayout>
+            </FrameLayout>
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:paddingLeft="24dp" android:paddingRight="24dp" android:paddingBottom="32dp">
+                <Button android:id="@+id/play" android:layout_width="match_parent" android:layout_height="56dp" android:background="@drawable/detail_play_button" android:textColor="#101010" android:textSize="18sp" android:textStyle="bold" android:text="播放" android:layout_marginBottom="24dp" />
+                <TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content" android:textColor="#AAAAAA" android:textSize="14sp" />
+                <LinearLayout android:id="@+id/seasons" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" />
+                <LinearLayout android:layout_width="match_parent" android:layout_height="56dp" android:gravity="center_vertical" android:layout_marginTop="24dp">
+                    <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="剧情简介" android:textSize="21sp" android:textStyle="bold" android:textColor="#FFFFFF" />
+                    <Button android:id="@+id/expand" android:layout_width="72dp" android:layout_height="48dp" android:text="查看 ›" android:textColor="#FFFFFF" android:background="@drawable/player_button" />
+                </LinearLayout>
+                <TextView android:id="@+id/description" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="16sp" android:textColor="#BFC1C6" android:lineSpacingExtra="6dp" android:maxLines="4" android:ellipsize="end" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="72dp" android:layout_gravity="top" android:padding="12dp" android:gravity="center_vertical" android:background="@drawable/player_top_scrim">
+        <ImageButton android:id="@+id/back" style="@style/PlayerIconButton" android:contentDescription="返回" />
+        <View android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+        <ImageButton android:id="@+id/refresh" style="@style/PlayerIconButton" android:contentDescription="刷新影片资料" />
+    </LinearLayout>
+</FrameLayout>

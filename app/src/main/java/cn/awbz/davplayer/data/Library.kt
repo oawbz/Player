@@ -36,15 +36,15 @@ class Library(val dav: DavClient) {
             } catch (e: DavFailure) { notices.add("部分分季目录无法加载，可刷新重试") }
         }
         if (seasons.size > 1 && direct.isNotEmpty()) seasons[0] = Season("未分季", direct)
-        val descriptionFile = entries.firstOrNull { !it.directory && it.name.equals("description.txt", true) }
-        var description = ""
-        if (descriptionFile != null) {
+        val nfoFile = Nfo.select(entries, work.name, direct)
+        var metadata = MediaMetadata()
+        if (nfoFile != null) {
             try {
-                val bytes = dav.read(connection, descriptionFile.url.encodedPath(), requests, 64 * 1024)
+                val bytes = dav.read(connection, nfoFile.url.encodedPath(), requests, Nfo.LIMIT)
                 val decoder = Charsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
-                description = decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString().removePrefix("\uFEFF").trim()
-            } catch (_: Exception) { notices.add("简介无法读取，请检查 UTF-8 编码及文件大小（最多 64 KB）") }
+                metadata = Nfo.parse(decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString())
+            } catch (_: Exception) { notices.add("NFO 无法读取，请检查 XML、UTF-8 编码及文件大小（最多 512 KB）") }
         }
-        return WorkDetail(work.copy(coverPath = MediaRules.cover(entries)?.url?.encodedPath()), seasons, description, notices.distinct())
+        return WorkDetail(work.copy(coverPath = MediaRules.cover(entries)?.url?.encodedPath()), seasons, metadata.plot, notices.distinct(), metadata)
     }
 }

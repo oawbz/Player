@@ -19,7 +19,7 @@ data class DavEntry(val url: HttpUrl, val name: String, val directory: Boolean)
 data class Episode(val path: String, val name: String, val season: String = "")
 data class Season(val name: String, val episodes: List<Episode>)
 data class Work(val connectionId: String, val path: String, val name: String, val coverPath: String? = null)
-data class WorkDetail(val work: Work, val seasons: List<Season>, val description: String, val notices: List<String> = emptyList()) {
+data class WorkDetail(val work: Work, val seasons: List<Season>, val description: String, val notices: List<String> = emptyList(), val metadata: MediaMetadata = MediaMetadata()) {
     val episodes: List<Episode> get() = seasons.flatMap { it.episodes }
 }
 data class History(val connectionId: String, val workPath: String, val workName: String,

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<tvshow>
+  <title>示例剧集</title>
+  <year>2026</year>
+  <premiered>2026-09-14</premiered>
+  <genre>剧情</genre>
+  <plot>这里填写整部剧的简介，集数由实际目录统计。</plot>
+  <ratings>
+    <rating name="example" max="10" default="true"><value>8.5</value></rating>
+  </ratings>
+</tvshow>

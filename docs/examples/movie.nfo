@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<movie>
+  <title>示例电影</title>
+  <year>2026</year>
+  <premiered>2026-07-11</premiered>
+  <runtime>106</runtime>
+  <genre>剧情</genre>
+  <genre>喜剧</genre>
+  <plot><![CDATA[这里填写影片简介，可保留多段文本。]]></plot>
+  <ratings>
+    <rating name="example" max="10" default="true">
+      <value>8.5</value>
+      <votes>100</votes>
+    </rating>
+  </ratings>
+</movie>
