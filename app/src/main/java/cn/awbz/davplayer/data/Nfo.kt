@@ -4,21 +4,21 @@ import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.StringReader
 
+data class CastMember(val name: String, val role: String = "")
+
 data class MediaMetadata(val title: String = "", val plot: String = "", val year: String = "",
     val premiered: String = "", val runtimeMinutes: Int? = null, val rating: Double? = null,
-    val genres: List<String> = emptyList(), val kind: String = "")
+    val genres: List<String> = emptyList(), val kind: String = "",
+    val originalTitle: String = "", val tagline: String = "", val certification: String = "",
+    val directors: List<String> = emptyList(), val writers: List<String> = emptyList(),
+    val countries: List<String> = emptyList(), val studios: List<String> = emptyList(),
+    val cast: List<CastMember> = emptyList())
 
 /** Read local Kodi-compatible metadata only. External artwork/trailer URLs are not fetched. */
 object Nfo {
     const val LIMIT = 512 * 1024
-    fun select(entries: List<MediaEntry>, workName: String, direct: List<Episode>): MediaEntry? {
-        val files = entries.filter { !it.directory && it.name.endsWith(".nfo", true) }
-        for (name in listOf("movie.nfo", "tvshow.nfo", "$workName.nfo") +
-            if (direct.size == 1) listOf(direct[0].name.substringBeforeLast('.') + ".nfo") else emptyList()) {
-            files.firstOrNull { it.name.equals(name, true) }?.let { return it }
-        }
-        return files.singleOrNull()
-    }
+    fun path(connection: Connection, workPath: String): String =
+        MediaPaths.child(MediaPaths.directory(MediaPaths.fromPath(connection, workPath)), "movie.nfo", false).rawPath
     fun parse(xml: String): MediaMetadata {
         if (xml.length > LIMIT || Regex("<!\\s*(DOCTYPE|ENTITY)", RegexOption.IGNORE_CASE).containsMatchIn(xml))
             throw MediaFailure("NFO 过大或包含不允许的实体声明")
@@ -28,6 +28,9 @@ object Nfo {
         parser.setInput(StringReader(xml.removePrefix("\uFEFF")))
         val fields = mutableMapOf<String, String>()
         val genres = mutableListOf<String>()
+        val repeated = mutableMapOf<String, MutableList<String>>()
+        val cast = mutableListOf<CastMember>()
+        var actorName = ""; var actorRole = ""
         val texts = mutableMapOf<Int, StringBuilder>()
         val tags = mutableMapOf<Int, String>()
         var root = ""; var closed = false
@@ -42,9 +45,10 @@ object Nfo {
                         texts[parser.depth] = StringBuilder()
                         tags[parser.depth] = parser.name
                         if (parser.depth == 1) {
-                            if (root.isNotEmpty() || parser.name !in setOf("movie", "tvshow", "episodedetails")) throw MediaFailure("NFO 不是影片或剧集 XML")
+                            if (root.isNotEmpty() || parser.name !in setOf("movie", "episodedetails")) throw MediaFailure("NFO 不是影片或剧集 XML")
                             root = parser.name
                         }
+                        if (parser.depth == 2 && parser.name == "actor") { actorName = ""; actorRole = "" }
                         if (parser.depth == 3 && parser.name == "rating" && tags[2] == "ratings") {
                             ratingMax = parser.getAttributeValue(null, "max")?.toDoubleOrNull() ?: 10.0
                             ratingDefault = parser.getAttributeValue(null, "default").equals("true", true)
@@ -60,7 +64,14 @@ object Nfo {
                         val value = texts.remove(parser.depth)?.toString()?.trim().orEmpty()
                         if (parser.depth == 2) {
                             if (parser.name == "genre" && value.isNotEmpty()) genres.add(value)
-                            else if (parser.name in setOf("title", "plot", "year", "premiered", "aired", "runtime", "rating")) fields[parser.name] = value
+                            else if (parser.name in setOf("director", "credits", "country", "studio") && value.isNotBlank())
+                                repeated.getOrPut(parser.name) { mutableListOf() }.add(value)
+                            else if (parser.name in setOf("title", "plot", "year", "premiered", "aired", "runtime", "rating", "originaltitle", "tagline", "mpaa")) fields[parser.name] = value
+                            if (parser.name == "actor" && actorName.isNotBlank()) cast.add(CastMember(actorName, actorRole))
+                        }
+                        if (parser.depth == 3 && tags[2] == "actor") {
+                            if (parser.name == "name") actorName = value
+                            if (parser.name == "role") actorRole = value
                         }
                         if (parser.depth == 4 && parser.name == "value" && tags[2] == "ratings" && tags[3] == "rating") ratingValue = value.toDoubleOrNull()
                         if (parser.depth == 3 && parser.name == "rating" && tags[2] == "ratings") {
@@ -81,6 +92,9 @@ object Nfo {
         val date = (fields["premiered"] ?: fields["aired"]).orEmpty().takeIf { Regex("\\d{4}-\\d{2}-\\d{2}").matches(it) }.orEmpty()
         val year = fields["year"].orEmpty().takeIf { Regex("\\d{4}").matches(it) } ?: date.take(4)
         return MediaMetadata(fields["title"].orEmpty(), fields["plot"].orEmpty(), year, date,
-            fields["runtime"]?.toIntOrNull()?.takeIf { it in 1..100000 }, rating, genres.distinct(), root)
+            fields["runtime"]?.toIntOrNull()?.takeIf { it in 1..100000 }, rating, genres.distinct().take(1024), root,
+            fields["originaltitle"].orEmpty(), fields["tagline"].orEmpty(), fields["mpaa"].orEmpty(),
+            repeated["director"].orEmpty().distinct().take(1024), repeated["credits"].orEmpty().distinct().take(1024),
+            repeated["country"].orEmpty().distinct().take(1024), repeated["studio"].orEmpty().distinct().take(1024), cast.distinct().take(4096))
     }
 }

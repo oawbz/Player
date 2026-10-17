@@ -57,9 +57,9 @@ open class PosterActivity : BaseActivity() {
                     }
                 }
                 status.text = if (progress.finished) {
-                    if (progress.failures > 0) "资料刷新完成，${progress.failures} 项未完成，可再次刷新重试"
-                    else "资料已缓存 · ${progress.total} 部作品"
-                } else if (progress.total == 0) "正在读取作品目录…" else "正在刷新资料 ${progress.done} / ${progress.total}"
+                    if (progress.failures > 0) "海报刷新完成，${progress.failures} 项未完成，可再次刷新重试"
+                    else "海报已缓存"
+                } else if (progress.total == 0) "正在读取作品目录…" else "正在刷新海报 ${progress.done} / ${progress.total}"
                 if (progress.finished) finishMetadataRefresh()
             }
         }
@@ -68,7 +68,7 @@ open class PosterActivity : BaseActivity() {
             try { future?.get() } catch (_: Exception) {
                 handler.post {
                     if (alive && postersActive && scope === refreshScope && !scope.isCancelled && refreshFuture === future) {
-                        status.text = "资料刷新中断，可再次刷新重试"
+                        status.text = "海报刷新中断，可再次刷新重试"
                         finishMetadataRefresh()
                     }
                 }
@@ -196,8 +196,7 @@ open class PosterActivity : BaseActivity() {
         b.subtitle.text = if (history == null) "" else listOf(history.season, "已看 ${formatTime(history.position)}").filter { it.isNotEmpty() }.joinToString(" · ")
         b.progress.visibility = if (history != null && history.duration > 0) View.VISIBLE else View.GONE
         if (history != null && history.duration > 0) b.progress.progress = ((history.position.coerceAtMost(history.duration) * 1000) / history.duration).toInt()
-        b.root.setOnClickListener { if (history != null) PlayerActivity.launch(this, work, Episode(history.videoPath, history.videoName, history.season), history.position)
-            else openWork(work) }
+        b.root.setOnClickListener { openWork(work) }
     }
     protected fun openWork(work: Work) {
         startActivity(Intent(this, DetailActivity::class.java).putExtra("connection", work.connectionId)

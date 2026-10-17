@@ -15,4 +15,6 @@
     <dimen name="episode_subtitle_height">28dp</dimen>
     <dimen name="episode_season_height">56dp</dimen>
     <dimen name="episode_season_gap">20dp</dimen>
+    <dimen name="poster_image_height">198dp</dimen>
+    <dimen name="poster_title_height">52dp</dimen>
 </resources>

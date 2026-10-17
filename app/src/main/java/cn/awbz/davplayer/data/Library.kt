@@ -17,6 +17,9 @@ class Library(val catalog: MediaCatalog, private val gate: ResourceGate? = null,
         handoffs.remove(connection to work.path)?.takeIf { clock() - it.at in 0..120_000 &&
             it.detail.episodes.any { entry -> entry.path == episode.path } }?.detail
     }
+    fun handoff(connection: Connection, detail: WorkDetail) = synchronized(handoffs) {
+        handoffs[connection to detail.work.path] = Handoff(clock(), detail)
+    }
     fun works(connection: Connection, category: Category, requests: RequestScope): List<Work> =
         list(connection, category.path, requests).filter { it.directory }.sortedWith(Comparator { a, b ->
             val time = when {
@@ -37,8 +40,16 @@ class Library(val catalog: MediaCatalog, private val gate: ResourceGate? = null,
         if (directories.size > 100) throw MediaFailure("作品分季目录超过 100 个，请整理目录")
         for (directory in directories) {
             try {
-                val episodes = MediaRules.episodes(list(connection, directory.path, requests), directory.name)
-                if (episodes.isNotEmpty()) seasons.add(Season(directory.name, episodes))
+                val children = list(connection, directory.path, requests)
+                val episodes = MediaRules.episodes(children, directory.name)
+                if (episodes.isNotEmpty()) {
+                    // Reuse the directory already read for episodes; no additional scans.
+                    val files = children.filterNot { it.directory }
+                    val assets = DetailAssets(
+                        files.firstOrNull { it.name == "movie.nfo" }?.path ?: Nfo.path(connection, work.path),
+                        files.firstOrNull { it.name == PosterFiles.NAME }?.path ?: PosterFiles.path(connection, work.path))
+                    seasons.add(Season(directory.name, episodes, assets))
+                }
             } catch (_: Exception) {
                 if (requests.isCancelled || Thread.currentThread().isInterrupted) throw MediaFailure("请求已取消")
                 notices.add("部分分季目录无法加载，可刷新重试")
@@ -46,9 +57,9 @@ class Library(val catalog: MediaCatalog, private val gate: ResourceGate? = null,
         }
         if (seasons.size > 1 && direct.isNotEmpty()) seasons[0] = Season("未分季", direct)
         return WorkDetail(work.copy(coverPath = null), seasons, "", notices.distinct(),
-            assets = DetailAssets(Nfo.select(entries, work.name, direct)?.path, PosterFiles.path(connection, work.path))).also {
+            assets = DetailAssets(Nfo.path(connection, work.path), PosterFiles.path(connection, work.path))).also {
                 requests.check()
-                synchronized(handoffs) { handoffs[connection to work.path] = Handoff(clock(), it) }
+                handoff(connection, it)
             }
     }
 }

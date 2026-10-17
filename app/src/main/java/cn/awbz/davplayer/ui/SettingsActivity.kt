@@ -16,6 +16,8 @@ import cn.awbz.davplayer.databinding.ActivityPageBinding
 import java.util.UUID
 
 class SettingsActivity : BaseActivity() {
+    private var restoreConnectionForm: (() -> Unit)? = null
+    private var cacheAction = false
     private lateinit var b: ActivityPageBinding
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -23,37 +25,65 @@ class SettingsActivity : BaseActivity() {
         b = page("设置")
     }
     override fun onResume() { super.onResume(); render() }
+    override fun onPause() {
+        restoreConnectionForm?.invoke()
+        super.onPause()
+    }
     private fun render() {
         b.content.removeAllViews(); b.status.text = "管理连接和媒体分类"
         b.content.addView(text("OpenList 连接", 22f))
-        store.connections().forEach { connection -> b.content.addView(button(connection.name + if (connection.authMode == AuthMode.ANONYMOUS) " · 匿名访问  ›" else " · 用户名密码  ›") { editConnection(connection) }) }
-        b.content.addView(button("＋ 添加 OpenList 连接") { editConnection(null) })
+        val connection = store.connection()
+        if (connection == null) b.content.addView(button("＋ 添加 OpenList 连接") { editConnection(null) })
+        else b.content.addView(button(connection.name + " · 编辑连接  ›") { editConnection(connection) })
         b.content.addView(text("分类", 22f))
         store.categories().forEach { category ->
             b.content.addView(button(category.name + "  ›") {
                 UiDialog.Builder(this).setTitle(category.name).setItems(arrayOf("修改名称", "重新选择目录", "删除分类")) { _, which ->
                     when (which) {
                         0 -> prompt("分类名称", category.name) { store.saveCategory(category.copy(name = it)); render() }
-                        1 -> chooseConnection(category)
+                        1 -> chooseDirectory(category)
                         2 -> UiDialog.Builder(this).setTitle("删除分类？").setMessage("仅删除分类配置，服务器文件及播放记录会保留。")
                             .setNegativeButton("取消", null).setPositiveButton("删除") { _, _ -> store.deleteCategory(category.id); render() }.show()
                     }
                 }.show()
             })
         }
-        b.content.addView(button("＋ 添加分类") { chooseConnection(null) })
+        b.content.addView(button("＋ 添加分类") { chooseDirectory(null) })
+        val cacheStatus = text("正在统计资料缓存…", 14f)
+        b.content.addView(text("资料缓存", 22f)); b.content.addView(cacheStatus)
+        val clear = button(if (cacheAction) "正在清理…" else "清理海报和简介缓存") {
+            UiDialog.Builder(this).setTitle("清理资料缓存？")
+                .setMessage("删除本机缓存的海报和简介，包括旧连接留下的缓存。配置、分类、观看记录及服务器文件不受影响；之后按需重新获取。")
+                .setNegativeButton("取消", null).setPositiveButton("清理") { _, _ ->
+                    if (!cacheAction) {
+                        cacheAction = true; render()
+                        val scope = RequestScope()
+                        val future = app.detailResources.clearCache(scope)
+                        app.workers.execute {
+                            var success = false
+                            try { future.get(); success = true } catch (_: Exception) { }
+                            handler.post {
+                                cacheAction = false
+                                if (alive && !isFinishing) {
+                                    render()
+                                    if (!success) error("部分缓存未能清理，请稍后重试")
+                                }
+                            }
+                        }
+                    }
+                }.show()
+        }
+        clear.isEnabled = !cacheAction; b.content.addView(clear)
+        job({ app.detailResources.cacheUsage() }, { usage ->
+            cacheStatus.text = "%.1f MiB · %d 个缓存文件".format(java.util.Locale.ROOT, usage.bytes / 1048576.0, usage.files)
+        }, { cacheStatus.text = "缓存统计暂不可用" })
         b.content.addView(text("使用 OpenList API，添加文件夹作为分类，读取 movie.nfo 和 poster.jpg；海报优先读取缓存，可见内容缺图自动下载，分类和详情可手动刷新。\n账号密码保存在应用私有区域，禁止系统备份；旧系统无法抵抗 root 或设备被控制。", 14f))
     }
-    private fun chooseConnection(category: Category?) {
-        val connections = store.connections()
-        if (connections.isEmpty()) { error("请先添加 OpenList 连接"); return }
-        fun select(connection: Connection) {
-            startActivityForResult(Intent(this, DirectoryActivity::class.java).putExtra("connection", connection.id)
-                .putExtra("category", category?.id).putExtra("name", category?.name)
-                .putExtra("path", if (category?.connectionId == connection.id) category.path else null), 1)
-        }
-        if (connections.size == 1) select(connections[0]) else UiDialog.Builder(this).setTitle("选择 OpenList 连接")
-            .setItems(connections.map { it.name }.toTypedArray()) { _, which -> select(connections[which]) }.show()
+    private fun chooseDirectory(category: Category?) {
+        val connection = store.connection() ?: return error("请先添加 OpenList 连接")
+        startActivityForResult(Intent(this, DirectoryActivity::class.java).putExtra("connection", connection.id)
+            .putExtra("category", category?.id).putExtra("name", category?.name)
+            .putExtra("path", if (category?.connectionId == connection.id) category.path else null), 1)
     }
     private fun styleAuthOption(option: RadioButton) {
         option.buttonDrawable = android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
@@ -92,6 +122,14 @@ class SettingsActivity : BaseActivity() {
             listOf(name, url, user, password).forEach { it.isEnabled = enabled }
             for (i in 0 until mode.childCount) mode.getChildAt(i).isEnabled = enabled
         }
+        val restore = {
+            if (dialog.isShowing) {
+                enableForm(true); dialog.getButton(UiDialog.BUTTON_POSITIVE).isEnabled = true
+                note.text = "先测试连接，成功后保存。"
+            }
+        }
+        restoreConnectionForm = restore
+        dialog.setOnDismissListener { if (restoreConnectionForm === restore) restoreConnectionForm = null }
         dialog.setOnShowListener {
             dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
             dialog.getButton(UiDialog.BUTTON_POSITIVE).setOnClickListener {
@@ -101,14 +139,24 @@ class SettingsActivity : BaseActivity() {
                     val authMode = if (mode.checkedRadioButtonId == R.id.auth_basic) AuthMode.BASIC else AuthMode.ANONYMOUS
                     if (authMode == AuthMode.BASIC && user.text.toString().isBlank()) { user.error = "请输入用户名"; return@setOnClickListener }
                     val base = MediaPaths.base(url.text.toString())
-                    val changedRoot = old != null && base.toString() != old.baseUrl
-                    val connection = Connection(if (changedRoot || old == null) UUID.randomUUID().toString() else old.id,
+                    val connection = Connection(old?.id ?: UUID.randomUUID().toString(),
                         label, base.toString(), if (authMode == AuthMode.BASIC) user.text.toString() else "", if (authMode == AuthMode.BASIC) password.text.toString() else "", authMode)
                     enableForm(false); dialog.getButton(UiDialog.BUTTON_POSITIVE).isEnabled = false; note.text = "正在测试连接…"
                     job({ library.list(connection, base.rawPath, it) }, {
                         if (dialog.isShowing) {
-                            // A different endpoint is a new connection; old categories and credentials remain recoverable.
-                            store.saveConnection(connection); dialog.dismiss(); render()
+                            fun save(replaceServer: Boolean) {
+                                try {
+                                    store.saveConnection(connection, replaceServer); dialog.dismiss(); render()
+                                } catch (_: Exception) { restore(); note.text = "配置未能保存，请检查目录或稍后重试" }
+                            }
+                            if (old != null && old.baseUrl != connection.baseUrl) {
+                                enableForm(true); dialog.getButton(UiDialog.BUTTON_POSITIVE).isEnabled = true
+                                UiDialog.Builder(this).setTitle("服务地址已改变")
+                                    .setMessage("同一服务换地址将保留分类和观看记录。更换为另一服务将重置分类和观看记录，避免使用旧进度；资料缓存保留，可手动清理。")
+                                    .setItems(arrayOf("同一服务换地址，保留分类和记录", "更换服务，重置分类和记录")) { _, which ->
+                                        if (dialog.isShowing) save(which == 1)
+                                    }.setNegativeButton("取消", null).show()
+                            } else save(false)
                         }
                     }, { message -> if (dialog.isShowing) { enableForm(true); note.text = message; dialog.getButton(UiDialog.BUTTON_POSITIVE).isEnabled = true } })
                 } catch (e: MediaFailure) { note.text = e.userMessage }

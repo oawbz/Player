@@ -21,7 +21,7 @@ class CategoryActivity : PosterActivity() {
         icon(b.back, PlayerIcon.Kind.BACK); icon(b.refresh, PlayerIcon.Kind.REPLAY)
         b.refresh.drawable.setColorFilter(resources.getColor(cn.awbz.davplayer.R.color.text_secondary), android.graphics.PorterDuff.Mode.SRC_IN)
         b.back.setOnClickListener { finish() }
-        b.refresh.contentDescription = "刷新分类海报和简介"
+        b.refresh.contentDescription = "刷新分类列表和海报"
         b.refresh.setOnClickListener {
             resetJobs()
             val category = store.categories().firstOrNull { it.id == intent.getStringExtra("category") }
@@ -44,12 +44,15 @@ class CategoryActivity : PosterActivity() {
         val category = store.categories().firstOrNull { it.id == intent.getStringExtra("category") } ?: return finish()
         val connection = store.connection(category.connectionId) ?: return error("连接配置不存在")
         loadedAt = 0; loadedCategory = category; loadedConnection = connection
-        b.title.text = category.name; b.status.text = "正在加载…"
+        b.title.text = category.name; b.status.visibility = View.VISIBLE; b.status.text = "正在加载…"
         job({ library.works(connection, category, it) }, { showWorks(it, hadContent) }, { b.status.text = it })
     }
     private fun showWorks(works: List<Work>, force: Boolean = false) {
         loadedAt = System.nanoTime() / 1_000_000
-        if (!refreshingMetadata) b.status.text = if (works.isEmpty()) "此分类暂无作品文件夹" else "${works.size} 部作品"
+        if (!refreshingMetadata) {
+            b.status.text = if (works.isEmpty()) "此分类暂无作品文件夹" else ""
+            b.status.visibility = if (works.isEmpty()) View.VISIBLE else View.GONE
+        }
         if (displayed == works) {
             if (force) (b.grid.adapter as? BaseAdapter)?.notifyDataSetChanged()
             return

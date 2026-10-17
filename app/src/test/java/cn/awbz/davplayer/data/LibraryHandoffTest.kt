@@ -25,6 +25,22 @@ class LibraryHandoffTest {
         library.detail(c, work, RequestScope())
         assertEquals(2, count)
     }
+    @Test fun retainedDetailCanBeHandedOffAgainAfterLongPlaybackWithoutDirectoryReads() {
+        var now = 0L
+        var reads = 0
+        val library = Library(object : MediaCatalog {
+            override fun list(connection: Connection, path: String, requests: RequestScope): List<MediaEntry> {
+                reads++; return listOf(MediaEntry(episode.path, episode.name, false))
+            }
+        }, clock = { now })
+        val detail = library.detail(c, work, RequestScope())
+        assertSame(detail, library.takePlaybackDetail(c, work, episode))
+        now = 1_000_000
+        library.handoff(c, detail)
+        assertSame(detail, library.takePlaybackDetail(c, work, episode))
+        assertNull(library.takePlaybackDetail(c, work, episode))
+        assertEquals(1, reads)
+    }
     @Test fun expiredOrChangedAccountHandoffsAreNeverUsed() {
         var now = 0L
         val library = Library(object : MediaCatalog {

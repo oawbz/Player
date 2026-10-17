@@ -10,11 +10,12 @@ android {
         applicationId 'cn.awbz.davplayer'
         minSdk 18
         targetSdk 33
-        versionCode 67
-        versionName '0.4.9'
+        versionCode 78
+        versionName '0.4.20'
         multiDexEnabled true
+        buildConfigField "boolean", "PLAYBACK_DIAGNOSTICS", (findProperty("playbackDiagnostics") == "true").toString()
     }
-    buildFeatures { viewBinding true }
+    buildFeatures { viewBinding true; buildConfig true }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11

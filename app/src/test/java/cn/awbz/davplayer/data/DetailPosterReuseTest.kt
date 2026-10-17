@@ -26,6 +26,12 @@ class DetailPosterReuseTest {
                 DetailAssets(null, "/work/poster.jpg"), force, RequestScope()) { result = it }.get(3, TimeUnit.SECONDS)
             return result!!
         }
+        fun nfo(force: Boolean = false): DetailResources.Snapshot {
+            var result: DetailResources.Snapshot? = null
+            resources.refresh(Connection("fixture", "fixture", "https://example.invalid/", "", ""),
+                DetailAssets(nfo = "/work/movie.nfo"), force, RequestScope()) { result = it }.get(3, TimeUnit.SECONDS)
+            return result!!
+        }
         fun poster(): Bitmap? {
             var result: Bitmap? = null
             resources.poster(Connection("fixture", "fixture", "https://example.invalid/", "", ""),
@@ -49,8 +55,8 @@ class DetailPosterReuseTest {
                 val key = bytes.toString(Charsets.UTF_8) to size
                 decoded.add(key)
                 images.getOrPut(key) { mock(Bitmap::class.java) }
-            }, ResourceHttp { _, _, _ -> server.url("/poster.jpg").toString() }, serial)
-            try { test(Fixture(resources, server, ResourceCache(File(root, "openlist-resources-v1")), decoded, images)) }
+            }, ResourceHttp { _, path, _ -> server.url(path).toString() }, serial)
+            try { test(Fixture(resources, server, ResourceCache(File(root, "openlist-resources-v2")), decoded, images)) }
             finally { serial.shutdownNow() }
         }
     }
@@ -87,5 +93,61 @@ class DetailPosterReuseTest {
         assertTrue(f.refresh(force = true).notices.isNotEmpty())
         assertSame(updated, f.poster())
         assertEquals(3, f.server.requestCount)
+    }
+    @Test fun cachedNfoWithEmptyPlotIsNotFetchedAgainUntilManualRefresh() = fixture { f ->
+        f.server.enqueue(MockResponse().setBody("<movie><title>first</title></movie>"))
+        val first = f.nfo()
+        assertTrue(first.nfoCached); assertEquals("", first.metadata.plot)
+        assertEquals("first", f.nfo().metadata.title)
+        assertEquals(1, f.server.requestCount)
+        f.server.enqueue(MockResponse().setBody("<movie><title>updated</title><plot>new</plot></movie>"))
+        assertEquals("new", f.nfo(force = true).metadata.plot)
+        assertEquals(2, f.server.requestCount)
+    }
+    @Test fun missingNfoResultIsCachedUntilManualRefresh() = fixture { f ->
+        f.server.enqueue(MockResponse().setResponseCode(404))
+        assertTrue(f.nfo().nfoCached)
+        assertTrue(f.nfo().nfoCached)
+        assertEquals(1, f.server.requestCount)
+        f.server.enqueue(MockResponse().setBody("<movie><plot>available</plot></movie>"))
+        assertEquals("available", f.nfo(force = true).metadata.plot)
+        assertEquals(2, f.server.requestCount)
+    }
+    @Test fun categoryRefreshReadsOnlyFirstLevelAndDownloadsPostersWithoutNfo() = fixture { f ->
+        val calls = mutableListOf<String>()
+        val catalog = object : MediaCatalog {
+            override fun list(connection: Connection, path: String, requests: RequestScope): List<MediaEntry> {
+                calls.add(path)
+                check(path == "/category/") { "must not list work directories" }
+                return listOf(MediaEntry("/category/work/", "work", true))
+            }
+        }
+        f.server.enqueue(MockResponse().setBody("poster"))
+        f.resources.refreshCategory(Library(catalog), connection,
+            Category("cat", "cat", connection.id, "/category/"), RequestScope()) {}.get(3, TimeUnit.SECONDS)
+        assertEquals(listOf("/category/"), calls)
+        assertEquals(1, f.server.requestCount)
+        assertEquals("/category/work/poster.jpg", f.server.takeRequest().path)
+    }
+
+    @Test fun cacheResetDeletesOnlyOldResourceDirectory() {
+        val root = temp.newFolder()
+        val old = File(root, "openlist-resources-v1").apply { mkdirs() }
+        File(old, "poster.bin").writeText("old poster")
+        File(old, "nfo.bin").writeText("old metadata")
+        val settings = File(root, "settings.json").apply { writeText("settings") }
+        val history = File(root, "history.json").apply { writeText("history") }
+        val fresh = File(root, "openlist-resources-v2").apply { mkdirs() }
+        File(fresh, "new.bin").writeText("new cache")
+        @Suppress("UNCHECKED_CAST")
+        val memory = mock(LruCache::class.java) as LruCache<String, Bitmap>
+        val serial = Executors.newSingleThreadExecutor()
+        try {
+            DetailResources(root, Executor { it.run() }, memory, serial = serial)
+            assertFalse(old.exists())
+            assertEquals("settings", settings.readText())
+            assertEquals("history", history.readText())
+            assertEquals("new cache", File(fresh, "new.bin").readText())
+        } finally { serial.shutdownNow() }
     }
 }

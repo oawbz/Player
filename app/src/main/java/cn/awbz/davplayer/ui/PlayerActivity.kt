@@ -38,6 +38,8 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     private var surfaceReady = false
     private var ready = false
     private var buffering = false
+    private var awaitingFrame = false
+    private val playbackWait = PlaybackWait()
     private var desiredPlay = true
     private var attempt = 0
     private var position = 0L
@@ -57,7 +59,7 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     private var playbackWarning: String? = null
     private var episodeDrawer: FrameLayout? = null
     private var toggleKind: PlayerIcon.Kind? = null
-    private val hideControls = Runnable { if (resumed && ready && desiredPlay && !failed && !scrubbing && !overlayOpen) setControlsVisible(false) }
+    private val hideControls = Runnable { if (resumed && ready && desiredPlay && !buffering && !awaitingFrame && !failed && !scrubbing && !overlayOpen) setControlsVisible(false) }
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
         when (change) {
             AudioManager.AUDIOFOCUS_LOSS, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
@@ -71,6 +73,9 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     private val ticker = object : Runnable {
         override fun run() {
             if (!resumed) return
+            if (playbackWait.expired(desiredPlay && !lostFocus && !failed && (buffering || awaitingFrame), android.os.SystemClock.elapsedRealtime())) {
+                fail("播放等待超时，请点击重试")
+            }
             capture(); updateControls()
             tickCount++; if (tickCount % 5 == 0) save()
             handler.postDelayed(this, 1000)
@@ -147,19 +152,12 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
             apply(reused); playlistReady = true
             return
         }
-        // History/process restoration may have no handoff. Finish directory work before media starts.
-        app.detailResources.gate.resumeBrowsing()
-        val scope = requests
-        fun finishLoading(result: WorkDetail?) {
-            result?.let { apply(it) }
-            app.detailResources.gate.pauseAndDrain { handler.post {
-                if (alive && !scope.isCancelled) {
-                    playlistReady = true; start()
-                }
-            } }
-        }
-        job({ library.detail(connection, work, it) }, { finishLoading(it) }, { finishLoading(null) })
+        // Process restoration can lose the in-memory playlist. Play only the known episode;
+        // browsing its directory belongs to the detail page, never the player.
+        apply(WorkDetail(work, listOf(Season(episode.season, listOf(episode))), ""))
+        playlistReady = true
     }
+
     private fun stepEpisode(offset: Int) {
         val result = detail ?: return
         val episodes = result.episodes
@@ -212,6 +210,7 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
         position = 0; duration = 0; failed = false; desiredPlay = true
         val season = result.seasons.first { group -> group.episodes.any { it.path == episode.path } }
         b.title.text = getString(R.string.episode_title, work.name, season.episodes.indexOfFirst { it.path == episode.path } + 1)
+        playbackWait.reset(); awaitingFrame = true
         completed = false; ready = false; audioPreferenceApplied = false; playbackWarning = null; buffering = true
         b.seek.isEnabled = false; showBuffering(true)
         updateControls()
@@ -243,11 +242,16 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
         val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val scroll = ScrollView(this).apply { addView(rows) }
         panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        fun render(index: Int) {
+        fun render(index: Int, page: Int? = null) {
+            val episodes = result.seasons[index].episodes
+            val selected = episodes.indexOfFirst { it.path == episode.path }.coerceAtLeast(0)
+            val window = EpisodePage.of(episodes.size, page ?: selected / EpisodePage.SIZE)
             for (i in 0 until tabs.childCount) tabs.getChildAt(i).isSelected = i == index
             rows.removeAllViews()
             var selectedRow: View? = null
-            result.seasons[index].episodes.forEachIndexed { number, item ->
+            if (window.page > 0) rows.addView(button("上一页") { render(index, window.page - 1) })
+            episodes.subList(window.start, window.end).forEachIndexed { offset, item ->
+                val number = window.start + offset
                 val row = Button(this).apply {
                     text = getString(R.string.episode_number, number + 1); isSelected = item.path == episode.path
                     gravity = Gravity.START or Gravity.CENTER_VERTICAL; setAllCaps(false)
@@ -258,7 +262,12 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
                 rows.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
                 if (row.isSelected) selectedRow = row
             }
-            scroll.post { selectedRow?.let { scroll.scrollTo(0, it.top); it.requestFocus() } ?: scroll.scrollTo(0, 0) }
+            if (window.pages > 1) rows.addView(text("${window.page + 1} / ${window.pages} 页"))
+            if (window.page + 1 < window.pages) rows.addView(button("下一页") { render(index, window.page + 1) })
+            scroll.post {
+                val focus = selectedRow ?: rows.getChildAt(0)
+                scroll.scrollTo(0, selectedRow?.top ?: 0); focus?.requestFocus()
+            }
         }
         result.seasons.forEachIndexed { index, season ->
             tabs.addView(Button(this).apply {
@@ -278,12 +287,18 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     }
     private fun start() {
         if (!resumed || !surfaceReady || !playlistReady || playback != null || failed) return
+        playbackWait.reset(); awaitingFrame = true
         val expected = ++attempt; completed = false; ready = false; playbackWarning = null; videoRatio = 0f; audioPreferenceApplied = false
         showBuffering(true); b.seek.isEnabled = false
         if (desiredPlay) requestFocus()
         val listener = object : Media3Player.Listener {
             private fun current() = resumed && expected == attempt && playback != null
-            override fun ready() { if (current()) { ready = true; b.seek.isEnabled = true; b.status.text = ""; b.loading.visibility = View.GONE; updateControls(); scheduleHide() } }
+            override fun firstFrame() { if (current()) { awaitingFrame = false; showBuffering(buffering); scheduleHide() } }
+            override fun ready() { if (current()) {
+                ready = true; b.seek.isEnabled = true
+                awaitingFrame = playback?.let { it.hasVideo && !it.hasRenderedVideo } ?: false
+                showBuffering(false); scheduleHide()
+            } }
             override fun buffering(active: Boolean) { if (current()) {
                 buffering = active
                 showBuffering(active)
@@ -305,9 +320,11 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
         catch (_: Exception) { fail("无法打开当前媒体，请检查地址、认证或文件格式") }
     }
     private fun showBuffering(active: Boolean) {
-        b.status.text = if (active) "缓冲中" else playbackWarning.orEmpty()
-        b.loading.visibility = if (active) View.VISIBLE else View.GONE
+        buffering = active
+        b.status.text = playbackWarning.orEmpty()
+        b.loading.visibility = if (active || awaitingFrame) View.VISIBLE else View.GONE
         b.status.visibility = if (b.status.text.isEmpty()) View.GONE else View.VISIBLE
+        updateControls()
     }
     private fun fail(message: String) {
         capture(); save(); release(); failed = true
@@ -315,11 +332,15 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     }
     private fun seek(target: Long) {
         if (!ready || duration <= 0) return
-        completed = false; position = target.coerceIn(0, duration); playback?.seek(position); updateControls()
+        completed = false; position = target.coerceIn(0, duration)
+        playbackWait.reset(); awaitingFrame = playback?.hasVideo == true
+        playback?.seek(position)
+        awaitingFrame = playback?.let { it.hasVideo && !it.hasRenderedVideo } ?: false
+        showBuffering(playback?.isBuffering == true)
     }
     private fun capture() {
         val e = playback ?: return
-        if (ready && !completed && e.duration > 0) { duration = e.duration; position = e.position.coerceIn(0, duration) }
+        if (ready && !completed && e.duration > 0 && (!e.hasVideo || e.hasRenderedVideo)) { duration = e.duration; position = e.position.coerceIn(0, duration) }
     }
     private fun save() {
         capture()
@@ -339,19 +360,20 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
         if (toggleKind != icon) { toggleKind = icon; b.toggle.setImageDrawable(PlayerIcon(icon)) }
         b.toggle.contentDescription = if (failed) "重试" else if (icon == PlayerIcon.Kind.REPLAY) "重新播放" else if (desiredPlay) "暂停" else "播放"
         val currentPlayer = playback
-        b.network.visibility = if (currentPlayer == null) View.GONE else View.VISIBLE
-        if (currentPlayer != null) {
-            val speed = currentPlayer.downloadSpeed
+        b.network.visibility = if (currentPlayer == null && !buffering) View.GONE else View.VISIBLE
+        if (currentPlayer != null || buffering) {
+            val speed = currentPlayer?.downloadSpeed ?: 0L
             val rate = if (speed >= 1024 * 1024) "%.2f MB/s".format(java.util.Locale.ROOT, speed / (1024.0 * 1024))
                 else "%.0f KB/s".format(java.util.Locale.ROOT, speed / 1024.0)
-            b.network.text = "$rate · 缓冲 ${currentPlayer.bufferedDuration / 1000} 秒"
+            val seconds = (currentPlayer?.bufferedDuration ?: 0L) / 1000
+            b.network.text = "$rate · ${if (buffering || awaitingFrame) "缓冲中" else "缓冲"} $seconds 秒"
         }
         b.time.text = formatTime(position)
         b.totalTime.text = formatTime(duration)
         if (!scrubbing) b.seek.progress = if (duration > 0) (position * 1000 / duration).toInt() else 0
     }
     private fun release() {
-        attempt++; buffering = false
+        attempt++; buffering = false; awaitingFrame = false; playbackWait.reset()
         val old = playback; playback = null; ready = false; old?.release()
     }
     private fun fitVideo() {
@@ -381,7 +403,7 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     override fun surfaceDestroyed(holder: SurfaceHolder) { capture(); save(); surfaceReady = false; release() }
     private fun scheduleHide() {
         handler.removeCallbacks(hideControls)
-        if (controlsVisible && resumed && ready && desiredPlay && !failed && !scrubbing && !overlayOpen) handler.postDelayed(hideControls, 4000)
+        if (controlsVisible && resumed && ready && desiredPlay && !buffering && !awaitingFrame && !failed && !scrubbing && !overlayOpen) handler.postDelayed(hideControls, 4000)
     }
     private fun setControlsVisible(visible: Boolean) {
         controlsVisible = visible

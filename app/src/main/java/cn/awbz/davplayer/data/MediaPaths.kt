@@ -36,6 +36,14 @@ object MediaPaths {
         if (!inside(root, url)) throw MediaFailure("目录不在当前连接范围内")
         return url
     }
+    fun relocate(path: String, old: Connection, updated: Connection): String {
+        val before = base(old.baseUrl)
+        val source = fromPath(old, path)
+        val relative = segments(source).drop(segments(before).size)
+        var target = base(updated.baseUrl)
+        relative.forEachIndexed { index, name -> target = child(target, name, index < relative.lastIndex || source.rawPath.endsWith('/')) }
+        return target.rawPath
+    }
     fun child(parent: URI, name: String, directory: Boolean): URI {
         if (name.isEmpty() || name in listOf(".", "..") || '/' in name || '\\' in name || '\u0000' in name)
             throw MediaFailure("返回的文件名无效")

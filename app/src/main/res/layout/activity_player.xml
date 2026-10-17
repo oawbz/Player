@@ -6,15 +6,15 @@
         <LinearLayout android:layout_width="match_parent" android:layout_height="76dp" android:layout_gravity="top" android:gravity="center_vertical" android:paddingStart="12dp" android:paddingEnd="12dp" android:paddingBottom="12dp" android:background="@drawable/player_top_scrim" android:clickable="true">
             <ImageButton android:id="@+id/back" style="@style/PlayerIconButton" android:contentDescription="@string/back" />
             <TextView android:id="@+id/title" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:layout_marginStart="12dp" android:layout_marginEnd="12dp" android:textSize="18sp" android:textColor="#FFFFFF" android:maxLines="1" android:ellipsize="end" />
-            <ImageButton android:id="@+id/audioTracks" style="@style/PlayerIconButton" android:contentDescription="@string/audio_tracks" android:visibility="gone" />
         </LinearLayout>
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="bottom" android:orientation="vertical" android:paddingStart="24dp" android:paddingEnd="24dp" android:paddingTop="20dp" android:paddingBottom="8dp" android:background="@drawable/player_bottom_scrim" android:clickable="true">
             <TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="12sp" android:textColor="#D0D0D0" android:maxLines="2" android:gravity="center" />
             <TextView android:id="@+id/network" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="12sp" android:textColor="@color/text_secondary" android:gravity="center" android:paddingBottom="4dp" android:visibility="gone" />
-            <LinearLayout android:layout_width="match_parent" android:layout_height="40dp" android:gravity="center_vertical">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center_vertical">
                 <TextView android:id="@+id/time" android:layout_width="64dp" android:layout_height="wrap_content" android:text="@string/initial_time" android:textColor="#FFFFFF" android:textSize="13sp" />
                 <SeekBar android:id="@+id/seek" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:progressDrawable="@drawable/ui_progress" android:thumb="@drawable/ui_thumb" android:max="1000" android:contentDescription="@string/playback_progress" />
                 <TextView android:id="@+id/totalTime" android:layout_width="64dp" android:layout_height="wrap_content" android:text="@string/initial_time" android:textColor="#FFFFFF" android:textSize="13sp" android:gravity="end" />
+                <ImageButton android:id="@+id/audioTracks" style="@style/PlayerIconButton" android:layout_marginStart="12dp" android:contentDescription="@string/audio_tracks" android:visibility="gone" />
             </LinearLayout>
             <LinearLayout android:layout_width="match_parent" android:layout_height="64dp" android:gravity="center">
                 <ImageButton android:id="@+id/previousEpisode" style="@style/PlayerIconButton" android:layout_marginEnd="8dp" android:contentDescription="@string/previous_episode" android:visibility="gone" />

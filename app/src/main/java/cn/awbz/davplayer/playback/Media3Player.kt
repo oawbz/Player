@@ -19,6 +19,7 @@ import java.util.concurrent.Future
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class Media3Player(context: Context, private val listener: Listener) {
     interface Listener {
+        fun firstFrame()
         fun ready()
         fun buffering(active: Boolean)
         fun ended()
@@ -32,8 +33,10 @@ class Media3Player(context: Context, private val listener: Listener) {
     private val handler = Handler(Looper.getMainLooper())
     private val resolver = Executors.newSingleThreadExecutor()
     private val meter = TransferMeter()
+    private val probe = if (cn.awbz.davplayer.BuildConfig.PLAYBACK_DIAGNOSTICS) PlaybackProbe() else null
     @Volatile private var generation = 0
     @Volatile private var released = false
+    private var renderedVideo = false
     private var resolving: Future<*>? = null
     private var resolveScope = RequestScope()
     private var resolveTimeout: Runnable? = null
@@ -41,9 +44,9 @@ class Media3Player(context: Context, private val listener: Listener) {
     private val audioTimeout = Runnable { pendingAudio?.second?.invoke(false); pendingAudio = null }
     private val network = DefaultHttpDataSource.Factory().setTransferListener(object : TransferListener {
         override fun onTransferInitializing(source: DataSource, spec: DataSpec, network: Boolean) {}
-        override fun onTransferStart(source: DataSource, spec: DataSpec, network: Boolean) {}
-        override fun onBytesTransferred(source: DataSource, spec: DataSpec, network: Boolean, bytes: Int) { meter.progress(bytes) }
-        override fun onTransferEnd(source: DataSource, spec: DataSpec, network: Boolean) {}
+        override fun onTransferStart(source: DataSource, spec: DataSpec, network: Boolean) { probe?.transferStart(spec.position, spec.length) }
+        override fun onBytesTransferred(source: DataSource, spec: DataSpec, network: Boolean, bytes: Int) { meter.progress(bytes); probe?.bytes(bytes) }
+        override fun onTransferEnd(source: DataSource, spec: DataSpec, network: Boolean) { probe?.transferEnd() }
     })
     private val player = ExoPlayer.Builder(context)
         .setRenderersFactory(DefaultRenderersFactory(context)
@@ -52,6 +55,7 @@ class Media3Player(context: Context, private val listener: Listener) {
             .apply { if (android.os.Build.VERSION.SDK_INT >= 23) forceEnableMediaCodecAsynchronousQueueing() })
         .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(DefaultDataSource.Factory(context, network)))
         .build().also { exo ->
+            probe?.attach(exo)
             exo.addListener(object : Player.Listener {
                 private fun active() = !released && exo.currentMediaItem?.mediaId == generation.toString()
                 override fun onPlaybackStateChanged(state: Int) {
@@ -59,6 +63,9 @@ class Media3Player(context: Context, private val listener: Listener) {
                     listener.buffering(state == Player.STATE_BUFFERING)
                     if (state == Player.STATE_READY) { listener.ready(); reportAudio() }
                     if (state == Player.STATE_ENDED) listener.ended()
+                }
+                override fun onRenderedFirstFrame() {
+                    if (active()) { renderedVideo = true; listener.firstFrame() }
                 }
                 override fun onTracksChanged(tracks: Tracks) {
                     if (!active()) return
@@ -84,7 +91,9 @@ class Media3Player(context: Context, private val listener: Listener) {
     }
     fun open(connection: Connection, path: String, holder: SurfaceHolder, position: Long, playing: Boolean) {
         check(!released)
+        renderedVideo = false
         val token = ++generation
+        probe?.open(token)
         resolveScope.cancel(); resolving?.cancel(true)
         resolveTimeout?.let(handler::removeCallbacks)
         pendingAudio = null; handler.removeCallbacks(audioTimeout)
@@ -122,7 +131,14 @@ class Media3Player(context: Context, private val listener: Listener) {
     }
     fun play() = player.play()
     fun pause() = player.pause()
-    fun seek(position: Long) = player.seekTo(position.coerceIn(0, duration))
+    fun seek(position: Long) {
+        val target = position.coerceIn(0, duration)
+        if (target == player.currentPosition) return
+        renderedVideo = false; player.seekTo(target)
+    }
+    val isBuffering get() = player.playbackState == Player.STATE_BUFFERING
+    val hasVideo get() = player.currentTracks.groups.any { it.type == C.TRACK_TYPE_VIDEO && it.isSelected }
+    val hasRenderedVideo get() = renderedVideo
     val position get() = player.currentPosition.coerceAtLeast(0)
     val duration get() = player.duration.takeIf { it > 0 } ?: 0L
     val downloadSpeed get() = meter.speed()
@@ -163,6 +179,7 @@ class Media3Player(context: Context, private val listener: Listener) {
         released = true; generation++; resolveScope.cancel(); resolving?.cancel(true); resolver.shutdownNow()
         handler.removeCallbacksAndMessages(null)
         pendingAudio = null
+        probe?.release()
         player.release()
     }
 }

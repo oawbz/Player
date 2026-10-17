@@ -16,18 +16,30 @@ class DetailResources(root: File, control: Executor,
     private val decodePoster: (ByteArray, Int) -> Bitmap = ::bitmap,
     private val http: ResourceHttp = ResourceHttp(),
     serial: java.util.concurrent.ExecutorService = Executors.newSingleThreadExecutor()) {
-    private val cache = ResourceCache(File(root, "openlist-resources-v1"))
+    private val cache = ResourceCache(File(root, "openlist-resources-v2"))
+    // Explicitly requested resource-cache reset; never touch settings or history.
+    init { control.execute { File(root, "openlist-resources-v1").deleteRecursively() } }
+    fun cacheUsage() = cache.usage()
+    fun clearCache(scope: RequestScope): Future<ResourceCache.Usage> = gate.submit(scope) {
+        scope.check()
+        try { cache.clear() } finally { posters.evictAll() }
+    }
     private val cooldown = RetryCooldown()
     val gate = ResourceGate(serial, control)
-    data class Snapshot(val metadata: MediaMetadata = MediaMetadata(), val cover: Bitmap? = null, val notices: List<String> = emptyList())
+    data class Snapshot(val metadata: MediaMetadata = MediaMetadata(), val cover: Bitmap? = null, val notices: List<String> = emptyList(), val nfoCached: Boolean = false)
     private fun metadata(entry: ResourceCache.Entry?) = entry?.let { runCatching { MetadataCodec.decode(it.data) }.getOrNull() }
     fun cached(connection: Connection, assets: DetailAssets, maxSide: Int = 1600): Snapshot {
+        var nfoCached = false
         val meta = assets.nfo?.let { path ->
             val entry = cache.read(connection, path, 2 * Nfo.LIMIT)
-            metadata(entry).also { if (entry != null && entry.data.isNotEmpty() && it == null) cache.remove(connection, path) }
+            val parsed = metadata(entry)
+            nfoCached = entry != null && (entry.data.isEmpty() || parsed != null)
+            if (entry != null && !nfoCached) cache.remove(connection, path)
+            parsed
         } ?: MediaMetadata()
-        return Snapshot(meta, assets.cover?.let { cachedPoster(connection, it, maxSide) })
+        return Snapshot(meta, assets.cover?.let { cachedPoster(connection, it, maxSide) }, nfoCached = nfoCached)
     }
+
     private fun cachedPoster(connection: Connection, path: String, maxSide: Int): Bitmap? =
         cache.read(connection, path, IMAGE_LIMIT)?.takeIf { it.data.isNotEmpty() }?.let { entry ->
             runCatching {
@@ -90,12 +102,12 @@ class DetailResources(root: File, control: Executor,
         val notices = mutableListOf<String>()
         fun emit() { if (!scope.isCancelled && !Thread.currentThread().isInterrupted) update(result.copy(notices = notices.toList())) }
         assets.nfo?.let { path ->
-            try {
-                val entry = fetch(connection, path, 2 * Nfo.LIMIT, force, scope, missingContent = !force && result.metadata.plot.isBlank()) { bytes ->
+            if (force || !result.nfoCached) try {
+                val entry = fetch(connection, path, 2 * Nfo.LIMIT, force, scope) { bytes ->
                     val xml = Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT).onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString()
                     MetadataCodec.encode(Nfo.parse(xml))
                 }
-                result = result.copy(metadata = metadata(entry) ?: MediaMetadata())
+                result = result.copy(metadata = metadata(entry) ?: MediaMetadata(), nfoCached = entry != null)
             } catch (e: Exception) { if (scope.isCancelled || Thread.currentThread().isInterrupted) throw e; notices.add("简介暂时无法更新，可稍后刷新") }
             emit()
         }
@@ -129,8 +141,7 @@ class DetailResources(root: File, control: Executor,
             if (cancelled()) return@submit
             var snapshot: Snapshot? = null
             try {
-                val entries = library.list(connection, work.path, scope)
-                val assets = DetailAssets(Nfo.select(entries, work.name, MediaRules.episodes(entries))?.path, PosterFiles.path(connection, work.path))
+                val assets = DetailAssets(cover = PosterFiles.path(connection, work.path))
                 snapshot = refreshNow(connection, assets, true, scope, 480) { }
                 if (snapshot.notices.isNotEmpty()) failures++
             } catch (_: Exception) { if (cancelled()) return@submit; failures++ }

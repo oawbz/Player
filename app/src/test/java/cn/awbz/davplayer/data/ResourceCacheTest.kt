@@ -36,6 +36,20 @@ class ResourceCacheTest {
         cache.write(connection, path, ResourceCache.Entry(bytes))
         assertArrayEquals(bytes, ResourceCache(root).read(connection, path, 100)!!.data)
     }
+    @Test fun manualClearCountsResourceFilesAndPreservesUnrelatedFiles() {
+        val root = temp.newFolder(); val cache = ResourceCache(root)
+        cache.write(connection, "/poster.jpg", ResourceCache.Entry(ByteArray(128)))
+        cache.write(connection, "/movie.nfo", ResourceCache.Entry(ByteArray(64)))
+        val unrelated = java.io.File(root, "keep.txt").apply { writeText("keep") }
+        java.io.File(root, "interrupted.tmp").writeBytes(ByteArray(10))
+        val usage = cache.usage()
+        assertEquals(3, usage.files)
+        assertTrue(usage.bytes > 192)
+        assertEquals(ResourceCache.Usage(0, 0), cache.clear())
+        assertEquals("keep", unrelated.readText())
+        cache.write(connection, "/poster.jpg", ResourceCache.Entry(byteArrayOf(42)))
+        assertArrayEquals(byteArrayOf(42), cache.read(connection, "/poster.jpg", 1024)!!.data)
+    }
     @Test fun truncatedFilesAreIgnored() {
         val root = temp.newFolder(); val cache = ResourceCache(root)
         cache.write(connection, "/dav/poster.jpg", ResourceCache.Entry(byteArrayOf(42)))

@@ -16,7 +16,7 @@ data class Connection(val id: String, val name: String, val baseUrl: String, val
 data class Category(val id: String, val name: String, val connectionId: String, val path: String)
 data class MediaEntry(val path: String, val name: String, val directory: Boolean, val modifiedAt: Long? = null)
 data class Episode(val path: String, val name: String, val season: String = "")
-data class Season(val name: String, val episodes: List<Episode>)
+data class Season(val name: String, val episodes: List<Episode>, val assets: DetailAssets? = null)
 data class Work(val connectionId: String, val path: String, val name: String, val coverPath: String? = null)
 data class DetailAssets(val nfo: String? = null, val cover: String? = null)
 data class WorkDetail(val work: Work, val seasons: List<Season>, val description: String, val notices: List<String> = emptyList(), val metadata: MediaMetadata = MediaMetadata(), val assets: DetailAssets = DetailAssets()) {

@@ -1,6 +1,6 @@
 <resources>
-    <dimen name="detail_poster_width">112dp</dimen>
-    <dimen name="detail_poster_height">168dp</dimen>
+    <dimen name="detail_poster_width">132dp</dimen>
+    <dimen name="detail_poster_height">198dp</dimen>
     <dimen name="detail_toolbar_height">64dp</dimen>
     <dimen name="detail_toolbar_padding">8dp</dimen>
     <dimen name="detail_content_padding">16dp</dimen>

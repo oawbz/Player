@@ -7,11 +7,12 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import cn.awbz.davplayer.data.*
 import cn.awbz.davplayer.databinding.ActivityMainBinding
+import cn.awbz.davplayer.databinding.ItemBrowseAllBinding
 
 class MainActivity : PosterActivity() {
     private lateinit var b: ActivityMainBinding
     private var lastReadAt = 0L
-    private var loadedConnections: List<Connection> = emptyList()
+    private var loadedConnection: Connection? = null
     private var loadedCategories: List<Category> = emptyList()
     private var loadedHistory: List<History> = emptyList()
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -23,12 +24,12 @@ class MainActivity : PosterActivity() {
     override fun onResume() {
         super.onResume()
         val fresh = lastReadAt != 0L && System.nanoTime() / 1_000_000 - lastReadAt < 30_000
-        if (!fresh || store.connections() != loadedConnections || store.categories() != loadedCategories || store.history() != loadedHistory) load()
+        if (!fresh || store.connection() != loadedConnection || store.categories() != loadedCategories || store.history() != loadedHistory) load()
     }
     private fun load() {
         clearPosterRequests(); resetJobs(); b.rows.removeAllViews()
         lastReadAt = 0
-        loadedConnections = store.connections(); loadedCategories = store.categories(); loadedHistory = store.history()
+        loadedConnection = store.connection(); loadedCategories = store.categories(); loadedHistory = store.history()
         val histories = store.history().filterNot { MediaRules.isHidden(it.workName) || MediaRules.isHidden(it.videoName) || MediaRules.isHidden(it.season) }
         if (histories.isNotEmpty()) {
             b.rows.addView(text("继续播放", 22f))
@@ -60,15 +61,13 @@ class MainActivity : PosterActivity() {
             if (connection == null) { status.text = "连接配置不存在，请到设置中检查"; completed(false); continue }
             var displayed: List<Work>? = null
             fun show(works: List<Work>) {
-                heading.text = getString(cn.awbz.davplayer.R.string.category_heading, category.name, works.size)
+                heading.text = getString(cn.awbz.davplayer.R.string.category_heading, category.name)
                 status.text = if (works.isEmpty()) "此分类暂无作品文件夹" else ""
                 status.visibility = if (works.isEmpty()) View.VISIBLE else View.GONE
                 if (displayed == works) return
                 displayed = works; row.removeAllViews()
                 works.take(12).forEach { row.addView(poster(it), cardParams()) }
-                if (works.size > 12) row.addView(button("查看全部 ${works.size} 部") {
-                    startActivity(Intent(this, CategoryActivity::class.java).putExtra("category", category.id))
-                }, cardParams())
+                if (works.size > 12) row.addView(browseAll(category), cardParams())
             }
             fun refresh() {
                 job({ library.works(connection, category, it) }, { show(it); completed(true) }, { message ->
@@ -79,6 +78,16 @@ class MainActivity : PosterActivity() {
             }
             refresh()
         }
+    }
+    private fun browseAll(category: Category): View {
+        val card = ItemBrowseAllBinding.inflate(layoutInflater)
+        card.icon.setImageDrawable(PlayerIcon(PlayerIcon.Kind.EPISODES))
+        card.icon.setColorFilter(resources.getColor(cn.awbz.davplayer.R.color.accent))
+        card.root.contentDescription = getString(cn.awbz.davplayer.R.string.browse_all_category, category.name)
+        card.root.setOnClickListener {
+            startActivity(Intent(this, CategoryActivity::class.java).putExtra("category", category.id))
+        }
+        return card.root
     }
     private fun row(): LinearLayout {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(0, dp(6), 0, dp(16)) }
