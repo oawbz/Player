@@ -26,6 +26,12 @@ class UiDialog private constructor(context: Context) : Dialog(context) {
             attributes = attributes.apply { dimAmount = .65f }
         }
     }
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) window?.let {
+            SystemBars.apply(it, context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE)
+        }
+    }
     private fun dp(value: Int) = (value * context.resources.displayMetrics.density + .5f).toInt()
     companion object {
         const val BUTTON_POSITIVE = DialogInterface.BUTTON_POSITIVE
@@ -58,7 +64,7 @@ class UiDialog private constructor(context: Context) : Dialog(context) {
             items?.forEachIndexed { index, label ->
                 body.addView(Button(context).apply {
                     text = if (index == selected) "✓  $label" else label
-                    isSelected = index == selected; gravity = Gravity.LEFT or Gravity.CENTER_VERTICAL
+                    isSelected = index == selected; gravity = Gravity.START or Gravity.CENTER_VERTICAL
                     setPadding(dp(16), dp(12), dp(16), dp(12)); minimumHeight = dp(52)
                     layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) }
                     setOnClickListener { dialog.dismiss(); choice?.invoke(dialog, index) }
@@ -73,7 +79,7 @@ class UiDialog private constructor(context: Context) : Dialog(context) {
                 }
             }.apply { addView(body) }
             panel.addView(scroll, LinearLayout.LayoutParams(-1, -2))
-            val footer = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.RIGHT; setPadding(0, dp(16), 0, 0) }
+            val footer = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END; setPadding(0, dp(16), 0, 0) }
             actions.forEach { (which, action) ->
                 val button = Button(context).apply {
                     text = action.first; setPadding(dp(12), dp(12), dp(12), dp(12))

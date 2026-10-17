@@ -20,6 +20,8 @@ import java.util.concurrent.Future
 import javax.net.ssl.SSLException
 
 open class BaseActivity : Activity() {
+    protected open val fullscreenAlways = false
+    protected fun applyFullscreen() = SystemBars.apply(window, fullscreenAlways || resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE)
     protected open fun displayOrientation(session: Int): Int = session
     protected val app get() = application as MediaApplication
     protected val store get() = app.store
@@ -34,9 +36,11 @@ open class BaseActivity : Activity() {
     internal fun preparePlayback(action: () -> Unit) {
         if (playbackPending || jobsPaused || !alive) return
         playbackPending = true
+        resetJobs()
         val expected = generation
         app.detailResources.gate.pauseAndDrain { handler.post {
             playbackPending = false
+            PlaybackTrace.networkSummary()
             if (alive && !jobsPaused && expected == generation && !isFinishing) action()
             else if (alive && !jobsPaused) app.detailResources.gate.resumeBrowsing()
         } }
@@ -47,7 +51,7 @@ open class BaseActivity : Activity() {
         tasks.forEach { it.cancel(true) }; tasks.clear()
     }
     protected fun <T> job(block: (RequestScope) -> T, success: (T) -> Unit, failure: (String) -> Unit = { error(it) }, executor: java.util.concurrent.ExecutorService = app.workers) {
-        if (jobsPaused || !alive) return
+        if (jobsPaused || playbackPending || !alive) return
         val expected = generation; val scope = requests
         tasks.add(executor.submit {
             try {
@@ -81,8 +85,11 @@ open class BaseActivity : Activity() {
         }
         val orientation = app.sessionOrientation ?: restored ?: initial
         app.sessionOrientation = orientation; requestedOrientation = displayOrientation(orientation)
-        window.statusBarColor = resources.getColor(R.color.background)
-        window.navigationBarColor = resources.getColor(R.color.background)
+        if (android.os.Build.VERSION.SDK_INT >= 21) {
+            window.statusBarColor = resources.getColor(R.color.background)
+            window.navigationBarColor = resources.getColor(R.color.background)
+        }
+        applyFullscreen()
     }
     protected fun icon(view: ImageButton, kind: PlayerIcon.Kind) { view.setImageDrawable(PlayerIcon(kind)) }
     protected fun dp(value: Int) = (value * resources.displayMetrics.density + .5f).toInt()
@@ -90,7 +97,7 @@ open class BaseActivity : Activity() {
         text = value; textSize = size; setPadding(dp(8), dp(8), dp(8), dp(8))
     }
     protected fun button(label: String, action: () -> Unit) = Button(this).apply {
-        text = label; setAllCaps(false); gravity = Gravity.CENTER_VERTICAL or Gravity.LEFT
+        text = label; setAllCaps(false); gravity = Gravity.CENTER_VERTICAL or Gravity.START
         setPadding(dp(16), dp(12), dp(16), dp(12)); minimumHeight = dp(52)
         layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4); bottomMargin = dp(8) }
         setOnClickListener { action() }
@@ -106,8 +113,14 @@ open class BaseActivity : Activity() {
     }
     override fun onResume() {
         super.onResume()
+        applyFullscreen()
+        window.decorView.post { if (alive) applyFullscreen() }
         if (this !is PlayerActivity) app.detailResources.gate.resumeBrowsing()
         if (jobsPaused) { jobsPaused = false; reloadAfterPause() }
+    }
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applyFullscreen()
     }
     override fun onPause() {
         jobsPaused = true; playbackPending = false

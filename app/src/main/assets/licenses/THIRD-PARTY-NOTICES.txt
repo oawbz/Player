@@ -17,3 +17,8 @@ Apache License 2.0 (text in androidx-media-LICENSE.txt).
 
 Ghosten is no longer a runtime dependency. Its original license is retained
 in docs/licenses/Ghosten-AGPL-3.0.txt for historical attribution only.
+
+API18 build uses the official Media3 1.2.1 FFmpeg extension sources:
+https://github.com/androidx/media/tree/1.2.1/libraries/decoder_ffmpeg
+Apache 2.0: androidx-media-LICENSE.txt; FFmpeg 6.0.1: LGPL 2.1 or later.
+Sources: third_party/media3-ffmpeg-api18; rebuild/relink: docs/media3-ffmpeg.md, setup-api18-ndk-docker.sh, build-ffmpeg-api18-docker.sh.

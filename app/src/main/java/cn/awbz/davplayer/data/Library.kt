@@ -1,8 +1,22 @@
 package cn.awbz.davplayer.data
 
 /** Directory browsing only; selected resource paths are reused by detail-only loading. */
-class Library(val catalog: MediaCatalog) {
-    fun list(connection: Connection, path: String, requests: RequestScope): List<MediaEntry> = catalog.list(connection, path, requests).filterNot { MediaRules.isHidden(it.name) }
+class Library(val catalog: MediaCatalog, private val gate: ResourceGate? = null,
+    private val clock: () -> Long = { System.nanoTime() / 1_000_000 }) {
+    private data class Handoff(val at: Long, val detail: WorkDetail)
+    private val handoffs = object : LinkedHashMap<Pair<Connection, String>, Handoff>(8, .75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<Connection, String>, Handoff>?) = size > 8
+    }
+    fun list(connection: Connection, path: String, requests: RequestScope): List<MediaEntry> =
+        requests.once(connection to MediaPaths.fromPath(connection, path).rawPath.trimEnd('/')) {
+            val read = { catalog.list(connection, path, requests).filterNot { MediaRules.isHidden(it.name) } }
+            gate?.call(requests, read) ?: read()
+        }
+    /** One-use in-memory handoff; no URLs, persistent directory cache or playback re-scan. */
+    fun takePlaybackDetail(connection: Connection, work: Work, episode: Episode): WorkDetail? = synchronized(handoffs) {
+        handoffs.remove(connection to work.path)?.takeIf { clock() - it.at in 0..120_000 &&
+            it.detail.episodes.any { entry -> entry.path == episode.path } }?.detail
+    }
     fun works(connection: Connection, category: Category, requests: RequestScope): List<Work> =
         list(connection, category.path, requests).filter { it.directory }.sortedWith(Comparator { a, b ->
             val time = when {
@@ -32,6 +46,9 @@ class Library(val catalog: MediaCatalog) {
         }
         if (seasons.size > 1 && direct.isNotEmpty()) seasons[0] = Season("未分季", direct)
         return WorkDetail(work.copy(coverPath = null), seasons, "", notices.distinct(),
-            assets = DetailAssets(Nfo.select(entries, work.name, direct)?.path, PosterFiles.path(connection, work.path)))
+            assets = DetailAssets(Nfo.select(entries, work.name, direct)?.path, PosterFiles.path(connection, work.path))).also {
+                requests.check()
+                synchronized(handoffs) { handoffs[connection to work.path] = Handoff(clock(), it) }
+            }
     }
 }

@@ -28,7 +28,8 @@ interface PlaybackPlayer {
     val duration: Long
     /** null means this engine does not expose transfer rate. */
     val downloadSpeed: Long?
-    val bufferedDuration: Long
+    /** null when the engine cannot report buffered time reliably. */
+    val bufferedDuration: Long?
     fun audioTracks(): List<AudioTrack>
     fun selectAudioTrack(id: String, result: (Boolean) -> Unit)
     fun release()

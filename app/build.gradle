@@ -2,16 +2,19 @@ plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
 }
+def api18 = providers.gradleProperty("api18").map { it.toBoolean() }.getOrElse(false)
+def mediaVersion = api18 ? "1.2.1" : "1.8.0"
 android {
     namespace 'cn.awbz.davplayer'
     compileSdk 36
     buildToolsVersion '35.0.0'
     defaultConfig {
         applicationId 'cn.awbz.davplayer'
-        minSdk 23
+        minSdk (api18 ? 18 : 23)
         targetSdk 33
-        versionCode 60
-        versionName '0.4.2-dual-player'
+        versionCode 66
+        versionName (api18 ? '0.4.8-api18' : '0.4.8')
+        multiDexEnabled api18
     }
     buildFeatures { viewBinding true; buildConfig true }
     compileOptions {
@@ -33,9 +36,10 @@ android {
     lint { abortOnError true; checkReleaseBuilds true }
 }
 dependencies {
-    implementation project(':media3-ffmpeg')
-    implementation 'androidx.media3:media3-exoplayer:1.8.0'
-    implementation 'androidx.media3:media3-exoplayer-hls:1.8.0'
+    implementation project(api18 ? ':media3-ffmpeg-api18' : ':media3-ffmpeg')
+    implementation 'androidx.multidex:multidex:2.0.1'
+    implementation "androidx.media3:media3-exoplayer:$mediaVersion"
+    implementation "androidx.media3:media3-exoplayer-hls:$mediaVersion"
     implementation 'com.squareup.okhttp3:okhttp:3.12.13'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.mockito:mockito-core:5.14.2'

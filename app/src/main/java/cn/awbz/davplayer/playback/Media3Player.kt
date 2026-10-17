@@ -41,7 +41,7 @@ class Media3Player(context: Context, private val listener: PlaybackPlayer.Listen
         .setRenderersFactory(DefaultRenderersFactory(context)
             .setEnableDecoderFallback(true)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-            .forceEnableMediaCodecAsynchronousQueueing())
+            .apply { if (android.os.Build.VERSION.SDK_INT >= 23) forceEnableMediaCodecAsynchronousQueueing() })
         .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(DefaultDataSource.Factory(context, network)))
         .build().also { exo ->
             exo.addAnalyticsListener(object : AnalyticsListener {
@@ -133,7 +133,7 @@ class Media3Player(context: Context, private val listener: PlaybackPlayer.Listen
                 val playable = group.isTrackSupported(index, true)
                 val language = format.language?.takeUnless { it == "und" }.orEmpty()
                 val name = format.label?.takeIf { it.isNotBlank() } ?: language.takeIf { it.isNotBlank() }
-                    ?.let { java.util.Locale.forLanguageTag(it).getDisplayLanguage(java.util.Locale.SIMPLIFIED_CHINESE) }
+                    ?.let { (if (android.os.Build.VERSION.SDK_INT >= 21) java.util.Locale.forLanguageTag(it) else java.util.Locale(it.substringBefore('-'))).getDisplayLanguage(java.util.Locale.SIMPLIFIED_CHINESE) }
                     ?: "音轨 ${result.size + 1}"
                 val channels = when (format.channelCount) { 1 -> "单声道"; 2 -> "立体声"; 6 -> "5.1"; 8 -> "7.1"; else -> "" }
                 val codec = AudioAvailability.codec(format.sampleMimeType.orEmpty())

@@ -1,10 +1,10 @@
 package cn.awbz.davplayer
 
-import android.app.Application
+import androidx.multidex.MultiDexApplication
 import cn.awbz.davplayer.data.*
 import java.util.concurrent.Executors
 
-class MediaApplication : Application() {
+class MediaApplication : MultiDexApplication() {
     var sessionOrientation: Int? = null
     var activeScreens = 0
     val workers = Executors.newFixedThreadPool(3)
@@ -15,7 +15,7 @@ class MediaApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         store = Store(this, storageWorker)
-        library = Library(OpenListCatalog())
         detailResources = DetailResources(filesDir, storageWorker)
+        library = Library(OpenListCatalog(), detailResources.gate)
     }
 }

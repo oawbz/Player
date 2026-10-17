@@ -19,6 +19,8 @@ class DetailActivity : BaseActivity() {
     private var resourceScope = RequestScope()
     private var resourceFuture: java.util.concurrent.Future<*>? = null
     private var resourceGeneration = 0
+    private val landscape get() = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    private fun dimension(id: Int) = resources.getDimensionPixelSize(id)
     private val posterPreviews = mutableListOf<ImageView>()
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -29,7 +31,7 @@ class DetailActivity : BaseActivity() {
         b.play.setSingleLine(true); b.play.ellipsize = TextUtils.TruncateAt.END
         val screen = resources.displayMetrics
         b.hero.layoutParams = b.hero.layoutParams.apply {
-            height = if (resources.configuration.screenWidthDp >= 600) dp(400) else if (screen.widthPixels > screen.heightPixels) dp(260) else minOf((screen.widthPixels * 1.35).toInt(), (screen.heightPixels * .70).toInt())
+            height = if (landscape || resources.configuration.screenWidthDp >= 600) dimension(R.dimen.detail_poster_height) else minOf((screen.widthPixels * 1.35).toInt(), (screen.heightPixels * .70).toInt())
         }
         b.back.setImageDrawable(PlayerIcon(PlayerIcon.Kind.BACK)); b.back.setOnClickListener { finish() }
         b.refresh.contentDescription = "刷新当前海报和简介"
@@ -59,10 +61,13 @@ class DetailActivity : BaseActivity() {
     }
     private fun loadResources(connection: Connection, base: WorkDetail, force: Boolean) {
         val expected = resourceGeneration; val scope = resourceScope
-        // Cache I/O and bitmap decoding stay off the UI thread. Only this screen downloads resources.
+        // Cache I/O and bitmap decoding stay off the UI thread.
         job({ app.detailResources.cached(connection, base.assets) }, { cached ->
             if (expected != resourceGeneration || scope.isCancelled) return@job
             applyResources(base, cached)
+            val missingCover = base.assets.cover != null && cached.cover == null
+            val missingPlot = base.assets.nfo != null && cached.metadata.plot.isBlank()
+            if (!force && !missingCover && !missingPlot) return@job
             resourceFuture = app.detailResources.refresh(connection, base.assets, force, scope) { update ->
                 handler.post {
                     if (alive && expected == resourceGeneration && !scope.isCancelled) applyResources(base, update)
@@ -119,7 +124,7 @@ class DetailActivity : BaseActivity() {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val episodesScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(row) }
         b.seasons.addView(episodesScroll, LinearLayout.LayoutParams(-1, -2).apply {
-            if (hasSeasons) topMargin = dp(20)
+            if (hasSeasons) topMargin = dimension(R.dimen.episode_season_gap)
         })
         fun select(index: Int) {
             selectedSeason = result.seasons[index].name; row.removeAllViews(); posterPreviews.clear()
@@ -136,18 +141,18 @@ class DetailActivity : BaseActivity() {
                 posterPreviews.add(image)
                 preview.addView(image, FrameLayout.LayoutParams(-1, -1))
                 preview.addView(ImageView(this).apply { setImageDrawable(PlayerIcon(PlayerIcon.Kind.PLAY)); setPadding(dp(10), dp(10), dp(10), dp(10)); setBackgroundResource(R.drawable.player_button) }, FrameLayout.LayoutParams(dp(44), dp(44), Gravity.CENTER))
-                card.addView(preview, LinearLayout.LayoutParams(dp(168), dp(94)))
-                card.addView(text("第 ${number + 1} 集", 16f).apply { maxLines = 1; setPadding(dp(8), dp(8), dp(8), 0) }, LinearLayout.LayoutParams(dp(168), dp(36)))
-                card.addView(text(episode.name, 12f).apply {
+                card.addView(preview, LinearLayout.LayoutParams(dimension(R.dimen.episode_image_width), dimension(R.dimen.episode_image_height)))
+                card.addView(text("第 ${number + 1} 集", if (landscape) 14f else 16f).apply { maxLines = 1; setPadding(dp(8), dp(8), dp(8), 0) }, LinearLayout.LayoutParams(dimension(R.dimen.episode_image_width), dimension(R.dimen.episode_title_height)))
+                card.addView(text(episode.name, if (landscape) 11f else 12f).apply {
                     maxLines = 1; ellipsize = TextUtils.TruncateAt.END
                     setTextColor(resources.getColor(R.color.text_secondary)); setPadding(dp(8), 0, dp(8), dp(8))
-                }, LinearLayout.LayoutParams(dp(168), dp(28)))
-                row.addView(card, LinearLayout.LayoutParams(dp(180), -2).apply { rightMargin = dp(8) })
+                }, LinearLayout.LayoutParams(dimension(R.dimen.episode_image_width), dimension(R.dimen.episode_subtitle_height)))
+                row.addView(card, LinearLayout.LayoutParams(dimension(R.dimen.episode_card_width), -2).apply { rightMargin = dp(8) })
             }
             episodesScroll.scrollTo(0, 0)
         }
         result.seasons.forEachIndexed { index, season ->
-            tabs.addView(button(season.name.ifEmpty { "第 ${index + 1} 季" }) { select(index) }.apply { setBackgroundResource(R.drawable.ui_button); textSize = 18f }, LinearLayout.LayoutParams(-2, dp(56)).apply { rightMargin = dp(16) })
+            tabs.addView(button(season.name.ifEmpty { "第 ${index + 1} 季" }) { select(index) }.apply { setBackgroundResource(R.drawable.ui_button); textSize = if (landscape) 16f else 18f }, LinearLayout.LayoutParams(-2, dimension(R.dimen.episode_season_height)).apply { rightMargin = dp(16) })
         }
         var index = result.seasons.indexOfFirst { it.name == selectedSeason }
         if (index < 0) index = result.seasons.indexOfFirst { it.name == last?.season }.coerceAtLeast(0)

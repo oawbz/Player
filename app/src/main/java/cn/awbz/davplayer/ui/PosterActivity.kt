@@ -13,19 +13,28 @@ import java.util.IdentityHashMap
 import java.util.concurrent.Future
 
 open class PosterActivity : BaseActivity() {
-    private class Slot(val connection: Connection, val path: String) {
+    private class Slot(val connection: Connection, val path: String, image: ImageView) {
+        val image = WeakReference(image)
         var requested = false
-        var scope: RequestScope? = null
+        var visibleSince = 0L
+        var lastVisibleAt = 0L
+        var load: PosterLoad? = null
+    }
+    private class PosterLoad(val key: Pair<Connection, String>) {
+        val scope = RequestScope()
         var future: Future<*>? = null
+        val subscribers = linkedSetOf<Slot>()
     }
     private val slots = IdentityHashMap<ImageView, Slot>()
+    private val loads = mutableMapOf<Pair<Connection, String>, PosterLoad>()
     private val visibleRect = Rect()
     private var postersActive = false
     private var refreshScope = RequestScope()
     private var refreshFuture: Future<*>? = null
     private var refreshButton: View? = null
+    private val posterTick = Runnable { updateVisiblePosters() }
     protected val refreshingMetadata get() = refreshFuture != null
-    protected fun refreshMetadata(connection: Connection, category: Category, status: TextView, button: View) {
+    protected fun refreshMetadata(connection: Connection, category: Category, status: TextView, button: View, onWorks: (List<Work>) -> Unit) {
         if (refreshingMetadata) return
         refreshScope = RequestScope(); val scope = refreshScope
         refreshButton = button; button.isEnabled = false
@@ -33,6 +42,7 @@ open class PosterActivity : BaseActivity() {
         refreshFuture = app.detailResources.refreshCategory(library, connection, category, scope) { progress ->
             handler.post {
                 if (!alive || !postersActive || scope !== refreshScope || scope.isCancelled) return@post
+                progress.works?.let(onWorks)
                 val work = progress.work; val connection = progress.connection
                 if (work != null && connection != null && progress.snapshot != null) {
                     val path = PosterFiles.path(connection, work.path)
@@ -83,38 +93,70 @@ open class PosterActivity : BaseActivity() {
         slots.values.forEach { cancel(it) }; slots.clear()
     }
     private fun cancel(slot: Slot) {
-        slot.future?.cancel(true); slot.future = null
-        slot.scope?.let { scope -> app.storageWorker.execute { scope.cancel() } }; slot.scope = null
-        slot.requested = false
+        slot.load?.let { request ->
+            request.subscribers.remove(slot)
+            if (request.subscribers.isEmpty()) {
+                if (loads[request.key] === request) loads.remove(request.key)
+                request.future?.cancel(true)
+                app.storageWorker.execute { request.scope.cancel() }
+            }
+        }
+        slot.load = null; slot.requested = false; slot.visibleSince = 0; slot.lastVisibleAt = 0
+    }
+    private fun requestPoster(slot: Slot) {
+        slot.requested = true
+        val key = slot.connection to slot.path
+        val current = loads[key]
+        if (current != null) {
+            current.subscribers.add(slot); slot.load = current
+            return
+        }
+        val request = PosterLoad(key)
+        loads[key] = request; request.subscribers.add(slot); slot.load = request
+        request.future = app.detailResources.poster(slot.connection, slot.path, request.scope) { bitmap ->
+            handler.post {
+                if (loads[key] !== request) return@post
+                loads.remove(key)
+                request.subscribers.forEach { subscriber ->
+                    if (subscriber.load === request) {
+                        subscriber.load = null
+                        val image = subscriber.image.get()
+                        if (alive && postersActive && !request.scope.isCancelled && image != null && image.tag === subscriber) {
+                            if (bitmap != null) image.setImageBitmap(bitmap) else image.setImageDrawable(PosterPlaceholder())
+                        }
+                    }
+                }
+                request.subscribers.clear()
+            }
+        }
     }
     private fun updateVisiblePosters() {
+        handler.removeCallbacks(posterTick)
         if (!postersActive) return
+        val now = System.nanoTime() / 1_000_000
+        var waiting = false
         val iterator = slots.entries.iterator()
         while (iterator.hasNext()) {
             val (image, slot) = iterator.next()
-            if (!image.isAttachedToWindow) { cancel(slot); iterator.remove(); continue }
+            if (image.windowToken == null) { cancel(slot); iterator.remove(); continue }
             val visible = image.isShown && image.getGlobalVisibleRect(visibleRect) && !visibleRect.isEmpty
             if (!visible) {
+                slot.visibleSince = 0
+                // Brief offscreen transitions do not abort a download another visible card needs.
+                if (slot.lastVisibleAt != 0L && now - slot.lastVisibleAt < 250) { waiting = true; continue }
                 cancel(slot)
-                // The disk cache and bounded bitmap LRU retain artwork, not offscreen view trees.
                 if (image.drawable !is PosterPlaceholder) image.setImageDrawable(PosterPlaceholder())
                 continue
             }
+            slot.lastVisibleAt = now
             if (slot.requested) continue
-            slot.requested = true
             val cached = app.detailResources.memoryPoster(slot.connection, slot.path)
-            if (cached != null) { image.setImageBitmap(cached); continue }
-            val scope = RequestScope(); slot.scope = scope
-            val reference = WeakReference(image)
-            slot.future = app.detailResources.poster(slot.connection, slot.path, scope) { bitmap ->
-                handler.post {
-                    val target = reference.get()
-                    if (alive && postersActive && slot.scope === scope && !scope.isCancelled && target != null && target.tag === slot) {
-                        if (bitmap != null) target.setImageBitmap(bitmap) else target.setImageDrawable(PosterPlaceholder())
-                    }
-                }
-            }
+            if (cached != null) { slot.requested = true; image.setImageBitmap(cached); continue }
+            if (slot.visibleSince == 0L) slot.visibleSince = now
+            if (now - slot.visibleSince < 180) { waiting = true; continue }
+            requestPoster(slot)
         }
+        if (waiting) handler.postDelayed(posterTick, 100)
     }
     override fun onResume() {
         super.onResume(); postersActive = true
@@ -122,11 +164,14 @@ open class PosterActivity : BaseActivity() {
         window.decorView.invalidate()
     }
     override fun onPause() {
-        postersActive = false
+        postersActive = false; handler.removeCallbacks(posterTick)
         window.decorView.viewTreeObserver.takeIf { it.isAlive }?.removeOnPreDrawListener(observer)
-        cancelMetadataRefresh(); clearPosterRequests(); super.onPause()
+        cancelMetadataRefresh()
+        // Retain bindings for short returns; cancelled tasks never retain the old screen scope.
+        slots.values.forEach { cancel(it) }
+        super.onPause()
     }
-    override fun onDestroy() { cancelMetadataRefresh(); clearPosterRequests(); super.onDestroy() }
+    override fun onDestroy() { handler.removeCallbacks(posterTick); cancelMetadataRefresh(); clearPosterRequests(); super.onDestroy() }
     protected fun poster(work: Work, history: History? = null): View {
         val b = ItemPosterBinding.inflate(layoutInflater)
         bindPoster(b, work, history)
@@ -140,8 +185,10 @@ open class PosterActivity : BaseActivity() {
         val previous = slots[b.image]
         if (connection != null && path != null && (previous == null || previous.connection != connection || previous.path != path)) {
             previous?.let { cancel(it) }
-            val slot = Slot(connection, path); slots[b.image] = slot; b.image.tag = slot
-            b.image.setImageDrawable(PosterPlaceholder())
+            val slot = Slot(connection, path, b.image); slots[b.image] = slot; b.image.tag = slot
+            val cached = app.detailResources.memoryPoster(connection, path)
+            slot.requested = cached != null
+            if (cached != null) b.image.setImageBitmap(cached) else b.image.setImageDrawable(PosterPlaceholder())
         } else if (connection == null || path == null) {
             previous?.let { cancel(it) }; slots.remove(b.image); b.image.tag = null; b.image.setImageDrawable(PosterPlaceholder())
         }

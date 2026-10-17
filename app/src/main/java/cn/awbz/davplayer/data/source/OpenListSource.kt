@@ -1,7 +1,6 @@
 package cn.awbz.davplayer.data.source
 
 import cn.awbz.davplayer.data.*
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.MediaType
@@ -9,12 +8,11 @@ import org.json.JSONObject
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
 
 /** API tokens and signed URLs remain in memory, never in models or logs. */
 object OpenListSource {
-    private val client = OkHttpClient.Builder().connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS).callTimeout(15, TimeUnit.SECONDS)
-        .followRedirects(false).build()
+    private val loginLock = ReentrantLock()
     private val tokens = ConcurrentHashMap<String, String>()
     private fun key(c: Connection): String = java.security.MessageDigest.getInstance("SHA-256")
         .digest((c.baseUrl + "\u0000" + c.username + "\u0000" + c.password + c.authMode).toByteArray())
@@ -23,45 +21,37 @@ object OpenListSource {
         val request = Request.Builder().url(MediaPaths.base(c.baseUrl).toString() + "api/" + method)
             .post(RequestBody.create(MediaType.parse("application/json; charset=utf-8"), data.toString()))
             .apply { if (token.isNotEmpty()) header("Authorization", token) }.build()
-        val call = client.newCall(request)
-        return scope.run({ call.cancel() }) {
-            call.execute().use { response ->
-                if (response.code() == 401) return@use JSONObject().put("code", 401)
-                if (!response.isSuccessful) throw MediaFailure("OpenList 请求失败（HTTP ${response.code()}）")
-                val input = response.body()?.byteStream() ?: throw MediaFailure("OpenList 响应为空")
-                val output = java.io.ByteArrayOutputStream()
-                input.use { stream ->
-                    val buffer = ByteArray(8192)
-                    while (true) {
-                        if (scope.isCancelled || Thread.currentThread().isInterrupted) throw MediaFailure("请求已取消")
-                        val count = stream.read(buffer); if (count < 0) break
-                        if (output.size() + count > 8 * 1024 * 1024) throw MediaFailure("OpenList 响应过大")
-                        output.write(buffer, 0, count)
-                    }
-                }
-                JSONObject(output.toString("UTF-8"))
-            }
-        }
+        val response = SourceHttp.execute(request, 8 * 1024 * 1024, scope, kind = when (method) { "auth/login" -> SourceHttp.Kind.LOGIN; "fs/list" -> SourceHttp.Kind.LIST; else -> SourceHttp.Kind.LINK })
+        if (response.status == 401) return JSONObject().put("code", 401)
+        if (response.status != 200) throw SourceStatusFailure(response.status, response.retryAfterSeconds)
+        return JSONObject(response.data.toString(Charsets.UTF_8))
     }
     private fun token(c: Connection, scope: RequestScope): String {
         if (c.authMode == AuthMode.ANONYMOUS) return ""
         val key = key(c)
         tokens[key]?.let { return it }
-        val result = post(c, "auth/login", JSONObject().put("username", c.username).put("password", c.password), "", scope)
-        if (result.optInt("code") != 200) throw MediaFailure("OpenList 登录失败，请检查账号密码")
-        val token = result.getJSONObject("data").getString("token")
-        if (token.isBlank()) throw MediaFailure("OpenList 登录令牌为空")
-        if (tokens.size > 16) tokens.clear()
-        tokens[key] = token
-        return token
+        while (!loginLock.tryLock(50, TimeUnit.MILLISECONDS)) scope.check()
+        try {
+            scope.check()
+            tokens[key]?.let { return it }
+            val result = post(c, "auth/login", JSONObject().put("username", c.username).put("password", c.password), "", scope)
+            if (result.optInt("code") != 200) throw MediaFailure("OpenList 登录失败，请检查账号密码")
+            val token = result.getJSONObject("data").getString("token")
+            if (token.isBlank()) throw MediaFailure("OpenList 登录令牌为空")
+            if (tokens.size > 16) tokens.clear()
+            tokens[key] = token
+            return token
+        } finally { loginLock.unlock() }
     }
     private fun api(c: Connection, method: String, data: JSONObject, scope: RequestScope): JSONObject {
         repeat(2) { attempt ->
-            val result = post(c, method, data, token(c, scope), scope)
+            val usedToken = token(c, scope)
+            val result = post(c, method, data, usedToken, scope)
             when (val code = result.optInt("code")) {
                 200 -> return result.getJSONObject("data")
-                401 -> { tokens.remove(key(c)); if (attempt == 1) throw MediaFailure("OpenList 登录已失效") }
+                401 -> { tokens.remove(key(c), usedToken); if (attempt == 1) throw MediaFailure("OpenList 登录已失效") }
                 404 -> throw Missing()
+                429, 503 -> throw SourceStatusFailure(code)
                 else -> throw MediaFailure("OpenList 请求失败（状态 $code）")
             }
         }

@@ -17,7 +17,7 @@ class DirectoryActivity : BaseActivity() {
         connection = store.connection(intent.getStringExtra("connection") ?: "") ?: return finish()
         path = savedInstanceState?.getString("path") ?: intent.getStringExtra("path") ?: MediaPaths.base(connection.baseUrl).rawPath
         b = ActivityListBinding.inflate(layoutInflater); setContentView(b.root)
-        b.title.text = "选择分类目录 · ${connection.name}"
+        b.title.text = getString(cn.awbz.davplayer.R.string.choose_category_directory, connection.name)
         b.back.text = "上一级"; b.back.setOnClickListener { up() }
         b.action.visibility = View.VISIBLE; b.action.text = "选择此目录"
         b.action.setOnClickListener {
@@ -35,7 +35,7 @@ class DirectoryActivity : BaseActivity() {
         job({ library.list(connection, path, it).filter { entry -> entry.directory } }, {
             directories = it; b.action.isEnabled = true
             val decoded = MediaPaths.segments(MediaPaths.fromPath(connection, path)).filter { segment -> segment.isNotEmpty() }.joinToString("/", prefix = "/")
-            b.status.text = "$decoded\n${if (it.isEmpty()) "没有子目录，可以选择当前目录" else "进入目录后点击“选择此目录”"}"
+            b.status.text = getString(cn.awbz.davplayer.R.string.directory_status, decoded, getString(if (it.isEmpty()) cn.awbz.davplayer.R.string.no_child_directories else cn.awbz.davplayer.R.string.enter_then_choose_directory))
             b.list.adapter = object : ArrayAdapter<String>(this, android.R.layout.simple_list_item_1, it.map { entry -> "▸  ${entry.name}" }) {
                 override fun getView(position: Int, convertView: View?, parent: android.view.ViewGroup): View = super.getView(position, convertView, parent).apply {
                     setBackgroundResource(cn.awbz.davplayer.R.drawable.ui_button)

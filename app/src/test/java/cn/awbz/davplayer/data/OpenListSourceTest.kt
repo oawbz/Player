@@ -46,4 +46,24 @@ class OpenListSourceTest {
             assertEquals(0, server.requestCount)
         }
     }
+    @Test fun concurrentFirstCallsLoginOnlyOnce() {
+        MockWebServer().use { server ->
+            val logins = java.util.concurrent.atomic.AtomicInteger()
+            server.setDispatcher(object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse =
+                    if (request.path == "/api/auth/login") {
+                        logins.incrementAndGet()
+                        reply("{\"token\":\"shared\"}").setBodyDelay(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    } else reply("{\"content\":[],\"total\":0}")
+            })
+            val c = Connection("test", "test", server.url("/").toString(), "user", "secret")
+            val pool = java.util.concurrent.Executors.newFixedThreadPool(3)
+            try {
+                val futures = (1..3).map { pool.submit<List<MediaEntry>> { OpenListSource.list(c, "/", RequestScope()) } }
+                futures.forEach { assertTrue(it.get(5, java.util.concurrent.TimeUnit.SECONDS).isEmpty()) }
+                assertEquals(1, logins.get())
+                assertEquals(4, server.requestCount)
+            } finally { pool.shutdownNow() }
+        }
+    }
 }

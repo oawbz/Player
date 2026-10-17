@@ -1,0 +1,18 @@
+<resources>
+    <dimen name="detail_poster_width">112dp</dimen>
+    <dimen name="detail_poster_height">168dp</dimen>
+    <dimen name="detail_toolbar_height">64dp</dimen>
+    <dimen name="detail_toolbar_padding">8dp</dimen>
+    <dimen name="detail_content_padding">16dp</dimen>
+    <dimen name="detail_title_size">20sp</dimen>
+    <dimen name="detail_metadata_size">12sp</dimen>
+    <dimen name="detail_play_margin">12dp</dimen>
+    <dimen name="detail_play_height">48dp</dimen>
+    <dimen name="episode_image_width">104dp</dimen>
+    <dimen name="episode_image_height">58dp</dimen>
+    <dimen name="episode_card_width">116dp</dimen>
+    <dimen name="episode_title_height">30dp</dimen>
+    <dimen name="episode_subtitle_height">24dp</dimen>
+    <dimen name="episode_season_height">48dp</dimen>
+    <dimen name="episode_season_gap">12dp</dimen>
+</resources>

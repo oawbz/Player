@@ -14,7 +14,7 @@ if ! docker image inspect "$image" >/dev/null 2>&1; then
   fi
   docker build --network host --file docker/Dockerfile.sdk36 --tag "$image" docker/
 fi
-./build-ffmpeg-docker.sh
+if [[ " $* " == *" -Papi18=true "* ]]; then ./build-ffmpeg-api18-docker.sh; else ./build-ffmpeg-docker.sh; fi
 cache_dir="${GRADLE_USER_HOME:-$remote_workspace/cache/gradle}"
 mkdir -p "$cache_dir" signing
 chmod 700 signing

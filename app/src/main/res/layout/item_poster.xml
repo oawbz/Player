@@ -1,6 +1,6 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:padding="6dp" android:background="@drawable/focus_card" android:focusable="true" android:clickable="true">
     <FrameLayout android:layout_width="match_parent" android:layout_height="198dp" android:background="#263443">
-        <ImageView android:id="@+id/image" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="centerCrop" android:contentDescription="作品封面" />
+        <ImageView android:id="@+id/image" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="centerCrop" android:contentDescription="@string/work_cover" />
     </FrameLayout>
     <TextView android:id="@+id/title" android:layout_width="match_parent" android:layout_height="52dp" android:paddingTop="8dp" android:textSize="16sp" android:minLines="2" android:maxLines="2" android:ellipsize="end" />
     <TextView android:id="@+id/subtitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:textSize="12sp" android:textColor="@color/text_secondary" android:maxLines="2" android:ellipsize="end" />

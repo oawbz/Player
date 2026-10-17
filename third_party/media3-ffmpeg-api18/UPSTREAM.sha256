@@ -1,0 +1,6 @@
+784ec052fef3e1b61101ad22505a8bb58e1744a2feb4f692a4d6d332d8cc2336  src/main/jni/ffmpeg_jni.cc
+7dd0daada7d3a9b102c9c2d94b7fc5a2970d62ee384eb8ccf68ac266fe440fe2  src/main/java/androidx/media3/decoder/ffmpeg/FfmpegAudioDecoder.java
+340a614e99c0725a38a6c978539fe36fe28a99414da53534a9914e6242a55234  src/main/java/androidx/media3/decoder/ffmpeg/FfmpegAudioRenderer.java
+9e73968d0802b2d7f8add911ec4dc5a6e621777e997eca74332e173c5463ad7a  src/main/java/androidx/media3/decoder/ffmpeg/FfmpegDecoderException.java
+3aa43bacd60a11cd556f18ede89b74e50ec7a684ef64c8b2b57f42bdaddee74d  src/main/java/androidx/media3/decoder/ffmpeg/FfmpegLibrary.java
+1d75d02151fcec7a1c0036ee4a216e885ae91e1f85e8c9ddfbd72b4def6709be  src/main/java/androidx/media3/decoder/ffmpeg/package-info.java

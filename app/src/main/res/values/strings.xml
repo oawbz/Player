@@ -1,0 +1,29 @@
+<resources>
+    <string name="app_name">云影</string>
+    <string name="film_cover">影片封面</string>
+    <string name="work_cover">作品封面</string>
+    <string name="play">播放</string>
+    <string name="plot">剧情简介</string>
+    <string name="view_more">查看 ›</string>
+    <string name="back">返回</string>
+    <string name="refresh_work">刷新影片资料</string>
+    <string name="refresh">刷新</string>
+    <string name="settings">设置</string>
+    <string name="toggle_controls">显示或隐藏播放控制</string>
+    <string name="audio_tracks">声道选择</string>
+    <string name="initial_time">00:00</string>
+    <string name="playback_progress">播放进度</string>
+    <string name="previous_episode">上一集</string>
+    <string name="rewind">后退 10 秒</string>
+    <string name="pause">暂停</string>
+    <string name="forward">前进 10 秒</string>
+    <string name="next_episode">下一集</string>
+    <string name="episodes">选集</string>
+    <string name="choose_category_directory">选择分类目录 · %1$s</string>
+    <string name="directory_status">%1$s\n%2$s</string>
+    <string name="no_child_directories">没有子目录，可以选择当前目录</string>
+    <string name="enter_then_choose_directory">进入目录后点击“选择此目录”</string>
+    <string name="category_heading">%1$s   ·   %2$d   ›</string>
+    <string name="episode_title">%1$s · 第 %2$d 集</string>
+    <string name="episode_number">第 %1$d 集</string>
+</resources>
