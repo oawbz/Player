@@ -12,7 +12,7 @@ docker run --rm --platform linux/amd64 --network host --volume "$PWD:/workspace:
   tools=/opt/android-sdk-linux/build-tools/35.0.0
   metadata="$($tools/aapt dump badging "$apk")"
   printf "%s\n" "$metadata" | head -n 8
-  [[ "$(printf "%s\n" "$metadata" | sed -n "/^sdkVersion:/s/[^0-9]//gp")" == "${2:-23}" ]]
+  [[ "$(printf "%s\n" "$metadata" | sed -n "/^sdkVersion:/s/[^0-9]//gp")" == "18" ]]
   if [[ "$apk" == */preview/* ]]; then
     if printf "%s\n" "$metadata" | grep -q "^application-debuggable"; then
       echo "Preview must not be debuggable" >&2; exit 1

@@ -7,6 +7,3 @@ rootProject.name = 'DavPlayer'
 include ':app'
 include ':media3-ffmpeg'
 project(':media3-ffmpeg').projectDir = file('third_party/media3-ffmpeg')
-
-include ':media3-ffmpeg-api18'
-project(':media3-ffmpeg-api18').projectDir = file('third_party/media3-ffmpeg-api18')

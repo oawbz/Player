@@ -24,15 +24,7 @@ class SettingsActivity : BaseActivity() {
     }
     override fun onResume() { super.onResume(); render() }
     private fun render() {
-        b.content.removeAllViews(); b.status.text = "管理播放偏好、连接和媒体分类"
-        b.content.addView(text("播放核心", 22f))
-        b.content.addView(button("当前核心：${store.playbackEngine.label}  ›") {
-            val engines = cn.awbz.davplayer.playback.PlaybackEngine.entries
-            UiDialog.Builder(this).setTitle("播放核心")
-                .setSingleChoiceItems(engines.map { it.label }.toTypedArray(), engines.indexOf(store.playbackEngine)) { dialog, which ->
-                    store.playbackEngine = engines[which]; dialog.dismiss(); render()
-                }.setNegativeButton("取消", null).show()
-        })
+        b.content.removeAllViews(); b.status.text = "管理连接和媒体分类"
         b.content.addView(text("OpenList 连接", 22f))
         store.connections().forEach { connection -> b.content.addView(button(connection.name + if (connection.authMode == AuthMode.ANONYMOUS) " · 匿名访问  ›" else " · 用户名密码  ›") { editConnection(connection) }) }
         b.content.addView(button("＋ 添加 OpenList 连接") { editConnection(null) })

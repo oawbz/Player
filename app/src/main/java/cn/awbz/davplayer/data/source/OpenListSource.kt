@@ -21,7 +21,7 @@ object OpenListSource {
         val request = Request.Builder().url(MediaPaths.base(c.baseUrl).toString() + "api/" + method)
             .post(RequestBody.create(MediaType.parse("application/json; charset=utf-8"), data.toString()))
             .apply { if (token.isNotEmpty()) header("Authorization", token) }.build()
-        val response = SourceHttp.execute(request, 8 * 1024 * 1024, scope, kind = when (method) { "auth/login" -> SourceHttp.Kind.LOGIN; "fs/list" -> SourceHttp.Kind.LIST; else -> SourceHttp.Kind.LINK })
+        val response = SourceHttp.execute(request, 8 * 1024 * 1024, scope)
         if (response.status == 401) return JSONObject().put("code", 401)
         if (response.status != 200) throw SourceStatusFailure(response.status, response.retryAfterSeconds)
         return JSONObject(response.data.toString(Charsets.UTF_8))

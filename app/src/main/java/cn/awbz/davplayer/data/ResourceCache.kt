@@ -5,7 +5,7 @@ import java.security.MessageDigest
 
 /** Persistent app-private resources. Explicit refreshes must not evict earlier downloads. */
 class ResourceCache(private val root: File) {
-    data class Entry(val data: ByteArray, val etag: String, val modified: String, val checkedAt: Long)
+    data class Entry(val data: ByteArray)
     fun key(connection: Connection, path: String): String {
         val identity = listOf(connection.id, connection.baseUrl, connection.authMode.name, connection.username, connection.password, path).joinToString("\u0000")
         val key = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 255) }
@@ -17,10 +17,11 @@ class ResourceCache(private val root: File) {
         if (!source.isFile || source.length() > limit + 32768L) return@runCatching null
         DataInputStream(BufferedInputStream(FileInputStream(source))).use { input ->
             require(input.readInt() == 1)
-            val at = input.readLong(); val etag = input.readUTF(); val modified = input.readUTF()
+            // Reserved header fields keep existing artwork readable without re-downloading.
+            input.readLong(); input.readUTF(); input.readUTF()
             val size = input.readInt(); require(size in 0..limit)
             val bytes = ByteArray(size); input.readFully(bytes); require(input.read() == -1)
-            Entry(bytes, etag, modified, at)
+            Entry(bytes)
         }
     }.getOrNull()
     @Synchronized fun write(connection: Connection, path: String, entry: Entry) {
@@ -30,8 +31,8 @@ class ResourceCache(private val root: File) {
         try {
             FileOutputStream(temp).use { stream ->
                 val out = DataOutputStream(stream)
-                out.writeInt(1); out.writeLong(entry.checkedAt)
-                out.writeUTF(entry.etag.take(4096)); out.writeUTF(entry.modified.take(4096))
+                out.writeInt(1); out.writeLong(0)
+                out.writeUTF(""); out.writeUTF("")
                 out.writeInt(entry.data.size); out.write(entry.data); out.flush(); stream.fd.sync()
             }
             if (!temp.renameTo(target)) throw IOException("资料缓存写入失败")

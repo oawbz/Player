@@ -40,7 +40,6 @@ open class BaseActivity : Activity() {
         val expected = generation
         app.detailResources.gate.pauseAndDrain { handler.post {
             playbackPending = false
-            PlaybackTrace.networkSummary()
             if (alive && !jobsPaused && expected == generation && !isFinishing) action()
             else if (alive && !jobsPaused) app.detailResources.gate.resumeBrowsing()
         } }

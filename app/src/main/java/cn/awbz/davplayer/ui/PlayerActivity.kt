@@ -33,8 +33,7 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     private lateinit var episode: Episode
     private lateinit var connection: Connection
     private lateinit var audio: AudioManager
-    private var playback: PlaybackPlayer? = null
-    private var engine = PlaybackEngine.EXOPLAYER
+    private var playback: Media3Player? = null
     private var resumed = false
     private var surfaceReady = false
     private var ready = false
@@ -83,7 +82,6 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
             intent.getStringExtra("workName") ?: "作品", intent.getStringExtra("cover"))
         episode = Episode(intent.getStringExtra("videoPath") ?: return finish(), intent.getStringExtra("videoName") ?: "视频", intent.getStringExtra("season") ?: "")
         connection = store.connection(work.connectionId) ?: return finish()
-        engine = store.playbackEngine
         position = savedInstanceState?.getLong("position") ?: intent.getLongExtra("position", 0)
         desiredPlay = savedInstanceState?.getBoolean("playing") ?: true
         volumeControlStream = AudioManager.STREAM_MUSIC
@@ -156,7 +154,6 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
             result?.let { apply(it) }
             app.detailResources.gate.pauseAndDrain { handler.post {
                 if (alive && !scope.isCancelled) {
-                    PlaybackTrace.networkSummary()
                     playlistReady = true; start()
                 }
             } }
@@ -170,14 +167,13 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
         if (index < 0) return
         episodes.getOrNull(index + offset)?.let { switchEpisode(it, result); scheduleHide() }
     }
-    private fun audioPreferencePath() = if (engine == PlaybackEngine.EXOPLAYER) episode.path else episode.path + "\n" + engine.name
     private fun restoreAudioPreference() {
         if (audioPreferenceApplied) return
         val current = playback ?: return
         val tracks = current.audioTracks()
         if (tracks.isEmpty()) return
         audioPreferenceApplied = true
-        val saved = store.audioPreference(connection.id, audioPreferencePath()) ?: return
+        val saved = store.audioPreference(connection.id, episode.path) ?: return
         val matching = tracks.firstOrNull { it.preferenceKey == saved.first && it.playable }
             ?: tracks.firstOrNull { it.id == saved.first && it.playable }
             ?: tracks.filter { it.label == saved.second }.singleOrNull()
@@ -194,7 +190,7 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
                 current.selectAudioTrack(selected.id) { success ->
                     if (playback === current) {
                         if (success) {
-                            store.saveAudioPreference(connection.id, audioPreferencePath(), selected.preferenceKey, selected.label)
+                            store.saveAudioPreference(connection.id, episode.path, selected.preferenceKey, selected.label)
                             audioPreferenceApplied = true
                         } else error("此音轨暂不可用，请选择其他音轨")
                     }
@@ -285,7 +281,7 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
         val expected = ++attempt; completed = false; ready = false; playbackWarning = null; videoRatio = 0f; audioPreferenceApplied = false
         showBuffering(true); b.seek.isEnabled = false
         if (desiredPlay) requestFocus()
-        val listener = object : PlaybackPlayer.Listener {
+        val listener = object : Media3Player.Listener {
             private fun current() = resumed && expected == attempt && playback != null
             override fun ready() { if (current()) { ready = true; b.seek.isEnabled = true; b.status.text = ""; b.loading.visibility = View.GONE; updateControls(); scheduleHide() } }
             override fun buffering(active: Boolean) { if (current()) {
@@ -303,17 +299,13 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
                 if (current() && width > 0 && height > 0) { videoRatio = width * pixelRatio / height; fitVideo() }
             }
         }
-        val created: PlaybackPlayer = when (engine) {
-            PlaybackEngine.EXOPLAYER -> Media3Player(this, listener)
-            PlaybackEngine.MEDIAPLAYER -> SystemPlayer(this, listener)
-        }
+        val created = Media3Player(this, listener)
         playback = created
         try { created.open(connection, episode.path, b.surface.holder, position, desiredPlay) }
         catch (_: Exception) { fail("无法打开当前媒体，请检查地址、认证或文件格式") }
     }
     private fun showBuffering(active: Boolean) {
-        val visible = active && engine == PlaybackEngine.EXOPLAYER
-        b.status.text = if (visible) "缓冲中" else playbackWarning.orEmpty()
+        b.status.text = if (active) "缓冲中" else playbackWarning.orEmpty()
         b.loading.visibility = if (active) View.VISIBLE else View.GONE
         b.status.visibility = if (b.status.text.isEmpty()) View.GONE else View.VISIBLE
     }
@@ -350,10 +342,9 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
         b.network.visibility = if (currentPlayer == null) View.GONE else View.VISIBLE
         if (currentPlayer != null) {
             val speed = currentPlayer.downloadSpeed
-            val rate = if (speed == null) null else if (speed >= 1024 * 1024) "%.2f MB/s".format(java.util.Locale.ROOT, speed / (1024.0 * 1024))
+            val rate = if (speed >= 1024 * 1024) "%.2f MB/s".format(java.util.Locale.ROOT, speed / (1024.0 * 1024))
                 else "%.0f KB/s".format(java.util.Locale.ROOT, speed / 1024.0)
-            b.network.text = listOfNotNull(rate, currentPlayer.bufferedDuration?.let { "缓冲 ${it / 1000} 秒" }).joinToString(" · ")
-            b.network.visibility = if (b.network.text.isEmpty()) View.GONE else View.VISIBLE
+            b.network.text = "$rate · 缓冲 ${currentPlayer.bufferedDuration / 1000} 秒"
         }
         b.time.text = formatTime(position)
         b.totalTime.text = formatTime(duration)

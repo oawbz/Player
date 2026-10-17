@@ -9,8 +9,6 @@ import androidx.media3.datasource.*
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import cn.awbz.davplayer.data.PlaybackTrace
-import androidx.media3.exoplayer.analytics.AnalyticsListener
 import cn.awbz.davplayer.data.Connection
 import cn.awbz.davplayer.data.source.OpenListSource
 import cn.awbz.davplayer.data.RequestScope
@@ -19,7 +17,17 @@ import java.util.concurrent.Future
 
 /** One Media3 player. OpenList returns the URL; official data sources own all media reads. */
 @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
-class Media3Player(context: Context, private val listener: PlaybackPlayer.Listener) : PlaybackPlayer {
+class Media3Player(context: Context, private val listener: Listener) {
+    interface Listener {
+        fun ready()
+        fun buffering(active: Boolean)
+        fun ended()
+        fun failed(message: String)
+        fun warning(message: String?)
+        fun videoSize(width: Int, height: Int, pixelRatio: Float)
+    }
+    data class AudioTrack(val id: String, val preferenceKey: String, val label: String, val selected: Boolean, val playable: Boolean)
+
     private val context = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
     private val resolver = Executors.newSingleThreadExecutor()
@@ -33,9 +41,9 @@ class Media3Player(context: Context, private val listener: PlaybackPlayer.Listen
     private val audioTimeout = Runnable { pendingAudio?.second?.invoke(false); pendingAudio = null }
     private val network = DefaultHttpDataSource.Factory().setTransferListener(object : TransferListener {
         override fun onTransferInitializing(source: DataSource, spec: DataSpec, network: Boolean) {}
-        override fun onTransferStart(source: DataSource, spec: DataSpec, network: Boolean) { PlaybackTrace.write("video HTTP start position=${spec.position}") }
+        override fun onTransferStart(source: DataSource, spec: DataSpec, network: Boolean) {}
         override fun onBytesTransferred(source: DataSource, spec: DataSpec, network: Boolean, bytes: Int) { meter.progress(bytes) }
-        override fun onTransferEnd(source: DataSource, spec: DataSpec, network: Boolean) { PlaybackTrace.write("video HTTP end") }
+        override fun onTransferEnd(source: DataSource, spec: DataSpec, network: Boolean) {}
     })
     private val player = ExoPlayer.Builder(context)
         .setRenderersFactory(DefaultRenderersFactory(context)
@@ -44,16 +52,10 @@ class Media3Player(context: Context, private val listener: PlaybackPlayer.Listen
             .apply { if (android.os.Build.VERSION.SDK_INT >= 23) forceEnableMediaCodecAsynchronousQueueing() })
         .setMediaSourceFactory(DefaultMediaSourceFactory(context).setDataSourceFactory(DefaultDataSource.Factory(context, network)))
         .build().also { exo ->
-            exo.addAnalyticsListener(object : AnalyticsListener {
-                override fun onAudioDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
-                    PlaybackTrace.write("audio decoder=$decoderName")
-                }
-            })
             exo.addListener(object : Player.Listener {
                 private fun active() = !released && exo.currentMediaItem?.mediaId == generation.toString()
                 override fun onPlaybackStateChanged(state: Int) {
                     if (!active()) return
-                    PlaybackTrace.write("player state=$state position=${exo.currentPosition} buffered=${exo.bufferedPosition}")
                     listener.buffering(state == Player.STATE_BUFFERING)
                     if (state == Player.STATE_READY) { listener.ready(); reportAudio() }
                     if (state == Player.STATE_ENDED) listener.ended()
@@ -68,7 +70,7 @@ class Media3Player(context: Context, private val listener: PlaybackPlayer.Listen
                     if (exo.playbackState == Player.STATE_READY) reportAudio()
                 }
                 override fun onPlayerError(error: PlaybackException) {
-                    if (active()) { PlaybackTrace.write("player error code=${error.errorCode}"); listener.failed("播放失败（错误 ${error.errorCode}）") }
+                    if (active()) { listener.failed("播放失败（错误 ${error.errorCode}）") }
                 }
                 override fun onVideoSizeChanged(size: androidx.media3.common.VideoSize) {
                     if (active()) listener.videoSize(size.width, size.height, size.pixelWidthHeightRatio)
@@ -80,7 +82,7 @@ class Media3Player(context: Context, private val listener: PlaybackPlayer.Listen
         listener.warning(AudioAvailability.warning(audio.isNotEmpty(), audio.any { it.isSelected },
             audio.flatMap { group -> (0 until group.length).map { group.getTrackFormat(it).sampleMimeType.orEmpty() } }))
     }
-    override fun open(connection: Connection, path: String, holder: SurfaceHolder, position: Long, playing: Boolean) {
+    fun open(connection: Connection, path: String, holder: SurfaceHolder, position: Long, playing: Boolean) {
         check(!released)
         val token = ++generation
         resolveScope.cancel(); resolving?.cancel(true)
@@ -118,15 +120,15 @@ class Media3Player(context: Context, private val listener: PlaybackPlayer.Listen
             }
         }
     }
-    override fun play() = player.play()
-    override fun pause() = player.pause()
-    override fun seek(position: Long) = player.seekTo(position.coerceIn(0, duration))
-    override val position get() = player.currentPosition.coerceAtLeast(0)
-    override val duration get() = player.duration.takeIf { it > 0 } ?: 0L
-    override val downloadSpeed get() = meter.speed()
-    override val bufferedDuration get() = (player.bufferedPosition - player.currentPosition).coerceAtLeast(0)
-    override fun audioTracks(): List<PlaybackPlayer.AudioTrack> {
-        val result = mutableListOf<PlaybackPlayer.AudioTrack>()
+    fun play() = player.play()
+    fun pause() = player.pause()
+    fun seek(position: Long) = player.seekTo(position.coerceIn(0, duration))
+    val position get() = player.currentPosition.coerceAtLeast(0)
+    val duration get() = player.duration.takeIf { it > 0 } ?: 0L
+    val downloadSpeed get() = meter.speed()
+    val bufferedDuration get() = (player.bufferedPosition - player.currentPosition).coerceAtLeast(0)
+    fun audioTracks(): List<AudioTrack> {
+        val result = mutableListOf<AudioTrack>()
         player.currentTracks.groups.forEachIndexed { groupIndex, group ->
             if (group.type == C.TRACK_TYPE_AUDIO) for (index in 0 until group.length) {
                 val format = group.getTrackFormat(index)
@@ -139,12 +141,12 @@ class Media3Player(context: Context, private val listener: PlaybackPlayer.Listen
                 val codec = AudioAvailability.codec(format.sampleMimeType.orEmpty())
                 val label = listOf(name, channels, codec).filter { it.isNotBlank() }.joinToString(" · ") + if (playable) "" else "（不支持）"
                 val key = listOf(language, format.sampleMimeType.orEmpty(), format.channelCount.toString(), format.label.orEmpty()).joinToString("|")
-                result.add(PlaybackPlayer.AudioTrack("$groupIndex:$index", key, label, group.isTrackSelected(index), playable))
+                result.add(AudioTrack("$groupIndex:$index", key, label, group.isTrackSelected(index), playable))
             }
         }
         return result
     }
-    override fun selectAudioTrack(id: String, result: (Boolean) -> Unit) {
+    fun selectAudioTrack(id: String, result: (Boolean) -> Unit) {
         val selected = audioTracks().firstOrNull { it.id == id && it.playable } ?: return result(false)
         if (selected.selected) return result(true)
         val parts = id.split(':').mapNotNull { it.toIntOrNull() }
@@ -156,7 +158,7 @@ class Media3Player(context: Context, private val listener: PlaybackPlayer.Listen
             .clearOverridesOfType(C.TRACK_TYPE_AUDIO).setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
             .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, parts[1])).build()
     }
-    override fun release() {
+    fun release() {
         if (released) return
         released = true; generation++; resolveScope.cancel(); resolving?.cancel(true); resolver.shutdownNow()
         handler.removeCallbacksAndMessages(null)

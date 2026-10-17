@@ -11,8 +11,8 @@ class PosterFilesTest {
         try { PosterFiles.path(connection, "/elsewhere/work/"); fail() } catch (_: MediaFailure) { }
     }
     @Test fun detailEntryRetriesMissingArtButNeverRevalidatesExistingArt() {
-        val oldImage = ResourceCache.Entry(byteArrayOf(1), "etag", "", 1L)
-        val recentMiss = ResourceCache.Entry(ByteArray(0), "", "", 1_000_000L)
+        val oldImage = ResourceCache.Entry(byteArrayOf(1))
+        val recentMiss = ResourceCache.Entry(ByteArray(0))
         assertFalse(PosterFiles.shouldFetch(oldImage, force = false))
         assertTrue(PosterFiles.shouldFetch(oldImage, force = true))
         assertTrue(PosterFiles.shouldFetch(recentMiss, force = false))

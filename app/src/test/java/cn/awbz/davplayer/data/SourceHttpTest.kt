@@ -22,11 +22,10 @@ class SourceHttpTest {
             assertNotEquals("close", a.getHeader("Connection"))
         }
     }
-    @Test fun activeCallCancellationActuallyExitsAndCountersReturnIdle() {
+    @Test fun activeCallCancellationActuallyExits() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody("late").setBodyDelay(1, TimeUnit.SECONDS))
             val scope = RequestScope(); val worker = Executors.newSingleThreadExecutor()
-            val before = SourceHttp.summary()
             try {
                 val task = worker.submit<Boolean> {
                     try { SourceHttp.execute(Request.Builder().url(server.url("/")).build(), 100, scope); false }
@@ -35,8 +34,7 @@ class SourceHttpTest {
                 assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
                 scope.cancel()
                 assertTrue(task.get(2, TimeUnit.SECONDS))
-                assertEquals(before.active, SourceHttp.summary().active)
-                assertEquals(before.calls + 1, SourceHttp.summary().calls)
+                assertEquals(1, server.requestCount)
             } finally { scope.cancel(); worker.shutdownNow() }
         }
     }

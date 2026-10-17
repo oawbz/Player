@@ -10,9 +10,6 @@ import java.util.concurrent.ExecutorService
 class Store(context: Context, private val writer: ExecutorService) {
     private val prefs = context.getSharedPreferences("openlist-settings-v1", Context.MODE_PRIVATE)
     private val historyFile = AtomicFile(File(context.filesDir, "openlist-history-v1.json"))
-    var playbackEngine: cn.awbz.davplayer.playback.PlaybackEngine
-        get() = cn.awbz.davplayer.playback.PlaybackEngine.stored(prefs.getString("playback-engine", null))
-        set(value) { prefs.edit().putString("playback-engine", value.name).apply() }
     private var records = readHistory()
     private fun audioKey(connectionId: String, path: String): String {
         val value = "$connectionId\n$path"

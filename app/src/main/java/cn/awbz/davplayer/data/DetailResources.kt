@@ -59,31 +59,27 @@ class DetailResources(root: File, control: Executor,
         if (scope.isCancelled || Thread.currentThread().isInterrupted) throw MediaFailure("请求已取消")
         val old = cache.read(connection, path, limit)
         if (!missingContent && !PosterFiles.shouldFetch(old, force)) return old
-        PlaybackTrace.write("resource start kind=${if (limit == IMAGE_LIMIT) "poster" else "nfo"}")
-        try {
-            val response = http.get(connection, path, if (limit == IMAGE_LIMIT) IMAGE_LIMIT else Nfo.LIMIT, scope)
-            if (scope.isCancelled || Thread.currentThread().isInterrupted) throw MediaFailure("请求已取消")
-            val now = System.currentTimeMillis()
-            var thumbnail: Bitmap? = null
-            val entry = when (response.status) {
-                // Missing resources can be retried on the next visible request or detail entry.
-                404 -> ResourceCache.Entry(ByteArray(0), "", "", now)
-                else -> {
-                    val data = transform(response.data)
-                    if (limit == IMAGE_LIMIT) thumbnail = decodePoster(data, POSTER_SIDE)
-                    ResourceCache.Entry(data, "", "", now)
-                }
+        val response = http.get(connection, path, if (limit == IMAGE_LIMIT) IMAGE_LIMIT else Nfo.LIMIT, scope)
+        if (scope.isCancelled || Thread.currentThread().isInterrupted) throw MediaFailure("请求已取消")
+        var thumbnail: Bitmap? = null
+        val entry = when (response.status) {
+            // Missing resources can be retried on the next visible request or detail entry.
+            404 -> ResourceCache.Entry(ByteArray(0))
+            else -> {
+                val data = transform(response.data)
+                if (limit == IMAGE_LIMIT) thumbnail = decodePoster(data, POSTER_SIDE)
+                ResourceCache.Entry(data)
             }
-            if (scope.isCancelled || Thread.currentThread().isInterrupted) throw MediaFailure("请求已取消")
-            cache.write(connection, path, entry)
-            if (entry.data.isNotEmpty()) cooldown.succeeded(cache.key(connection, path))
-            if (limit == IMAGE_LIMIT) {
-                val key = cache.key(connection, path)
-                // Publish only after validation and the atomic disk write. Returning lists reuse it.
-                if (thumbnail != null) posters.put(key, thumbnail) else posters.remove(key)
-            }
-            return entry
-        } finally { PlaybackTrace.write("resource end") }
+        }
+        if (scope.isCancelled || Thread.currentThread().isInterrupted) throw MediaFailure("请求已取消")
+        cache.write(connection, path, entry)
+        if (entry.data.isNotEmpty()) cooldown.succeeded(cache.key(connection, path))
+        if (limit == IMAGE_LIMIT) {
+            val key = cache.key(connection, path)
+            // Publish only after validation and the atomic disk write. Returning lists reuse it.
+            if (thumbnail != null) posters.put(key, thumbnail) else posters.remove(key)
+        }
+        return entry
     }
     fun refresh(connection: Connection, assets: DetailAssets, force: Boolean, scope: RequestScope, update: (Snapshot) -> Unit): Future<*> = gate.submit(scope) {
         refreshNow(connection, assets, force, scope, maxSide = 1600, update = update)

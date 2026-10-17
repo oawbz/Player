@@ -68,7 +68,7 @@ class DetailPosterReuseTest {
         assertEquals(1, f.server.requestCount)
     }
     @Test fun detailDiskHitAlsoWarmsListWithoutFetchingAgain() = fixture { f ->
-        f.disk.write(connection, path, ResourceCache.Entry("cached".toByteArray(), "", "", 1))
+        f.disk.write(connection, path, ResourceCache.Entry("cached".toByteArray()))
         f.resources.cached(connection, DetailAssets(null, path))
         val thumbnail = f.images["cached" to 480]!!
         f.disk.remove(connection, path)
