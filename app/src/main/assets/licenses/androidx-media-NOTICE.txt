@@ -1,0 +1,6 @@
+CompatibleOkHttpDataSource.java is adapted from AndroidX Media 1.2.1.
+Copyright (C) 2016 The Android Open Source Project.
+Licensed under Apache License 2.0; see androidx-media-LICENSE.txt.
+Source: https://github.com/androidx/media/blob/1.2.1/libraries/datasource_okhttp/src/main/java/androidx/media3/datasource/okhttp/OkHttpDataSource.java
+Changes: local package, class and module name; class-level unstable API opt-in; removed compile-only annotations.
+Uses the project's OkHttp 3.12.13 for Android API 18 compatibility.

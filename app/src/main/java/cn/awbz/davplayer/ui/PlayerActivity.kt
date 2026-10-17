@@ -1,7 +1,6 @@
 package cn.awbz.davplayer.ui
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
@@ -14,21 +13,31 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.SeekBar
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.HorizontalScrollView
+import android.widget.Button
+import android.widget.TextView
+import android.view.Gravity
+import android.graphics.Color
+import cn.awbz.davplayer.R
 import cn.awbz.davplayer.data.*
 import cn.awbz.davplayer.databinding.ActivityPlayerBinding
 import cn.awbz.davplayer.playback.*
 
 class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
+    override fun displayOrientation(session: Int): Int = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
     private lateinit var b: ActivityPlayerBinding
     private lateinit var work: Work
     private lateinit var episode: Episode
     private lateinit var connection: Connection
     private lateinit var audio: AudioManager
-    private var engine: Engine? = null
-    private var core = Core.SYSTEM
+    private var playback: PlaybackPlayer? = null
+    private var engine = PlaybackEngine.EXOPLAYER
     private var resumed = false
     private var surfaceReady = false
     private var ready = false
+    private var buffering = false
     private var desiredPlay = true
     private var attempt = 0
     private var position = 0L
@@ -40,18 +49,21 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     private var focusHeld = false
     private var controlsVisible = true
     private var scrubbing = false
-    private var coreDialogOpen = false
+    private var overlayOpen = false
+    private var detail: WorkDetail? = null
+    private var audioPreferenceApplied = false
+    private var playbackWarning: String? = null
+    private var episodeDrawer: FrameLayout? = null
     private var toggleKind: PlayerIcon.Kind? = null
-    private val hideControls = Runnable { if (resumed && ready && desiredPlay && !failed && !scrubbing && !coreDialogOpen) setControlsVisible(false) }
-    private val timeout = Runnable { if (engine != null && !ready) fail("媒体准备超时，请检查网络或手动切换核心") }
+    private val hideControls = Runnable { if (resumed && ready && desiredPlay && !failed && !scrubbing && !overlayOpen) setControlsVisible(false) }
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
         when (change) {
             AudioManager.AUDIOFOCUS_LOSS, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                lostFocus = desiredPlay; engine?.pause()
+                lostFocus = desiredPlay; playback?.pause()
                 if (change == AudioManager.AUDIOFOCUS_LOSS) { desiredPlay = false; focusHeld = false; lostFocus = false }
                 updateControls()
             }
-            AudioManager.AUDIOFOCUS_GAIN -> if (lostFocus && resumed) { lostFocus = false; engine?.play(); updateControls() }
+            AudioManager.AUDIOFOCUS_GAIN -> if (lostFocus && resumed) { lostFocus = false; playback?.play(); updateControls() }
         }
     }
     private val ticker = object : Runnable {
@@ -68,47 +80,195 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
             intent.getStringExtra("workName") ?: "作品", intent.getStringExtra("cover"))
         episode = Episode(intent.getStringExtra("videoPath") ?: return finish(), intent.getStringExtra("videoName") ?: "视频", intent.getStringExtra("season") ?: "")
         connection = store.connection(work.connectionId) ?: return finish()
+        engine = store.playbackEngine
         position = savedInstanceState?.getLong("position") ?: intent.getLongExtra("position", 0)
         desiredPlay = savedInstanceState?.getBoolean("playing") ?: true
         volumeControlStream = AudioManager.STREAM_MUSIC
-        core = store.core; audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        audio = getSystemService(Context.AUDIO_SERVICE) as AudioManager
         b = ActivityPlayerBinding.inflate(layoutInflater); setContentView(b.root)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        if (Build.VERSION.SDK_INT >= 28) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        b.engine.text = engine.label
+        b.engine.setOnClickListener { showEngines() }
         b.back.setImageDrawable(PlayerIcon(PlayerIcon.Kind.BACK))
         b.rewind.setImageDrawable(PlayerIcon(PlayerIcon.Kind.REWIND))
         b.forward.setImageDrawable(PlayerIcon(PlayerIcon.Kind.FORWARD))
-        b.core.setImageDrawable(PlayerIcon(PlayerIcon.Kind.SETTINGS))
+        b.previousEpisode.setImageDrawable(PlayerIcon(PlayerIcon.Kind.PREVIOUS))
+        b.nextEpisode.setImageDrawable(PlayerIcon(PlayerIcon.Kind.NEXT))
+        b.previousEpisode.setOnClickListener { stepEpisode(-1) }
+        b.nextEpisode.setOnClickListener { stepEpisode(1) }
+        b.audioTracks.setImageDrawable(PlayerIcon(PlayerIcon.Kind.AUDIO))
+        b.audioTracks.setOnClickListener { showAudioTracks() }
         b.tapArea.setOnClickListener { setControlsVisible(!controlsVisible) }
         applyFullscreen()
-        b.title.text = listOf(work.name, episode.season, episode.name).filter { it.isNotEmpty() }.joinToString(" · ")
+        b.title.text = work.name
+        b.episodes.setImageDrawable(PlayerIcon(PlayerIcon.Kind.EPISODES))
+        b.episodes.setOnClickListener { showEpisodes() }
+        loadEpisodes()
         b.surface.holder.addCallback(this)
         b.root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> fitVideo() }
         b.back.setOnClickListener { finish() }
         b.toggle.setOnClickListener {
             if (failed) { failed = false; desiredPlay = true; start() }
-            else if (desiredPlay) { desiredPlay = false; engine?.pause(); save(); updateControls() }
+            else if (desiredPlay) { desiredPlay = false; playback?.pause(); save(); updateControls() }
             else {
                 if (duration > 0 && position >= duration) seek(0)
-                desiredPlay = true; if (requestFocus()) engine?.play(); updateControls()
+                desiredPlay = true; if (requestFocus()) playback?.play(); updateControls()
             }
             if (!desiredPlay || failed) setControlsVisible(true) else scheduleHide()
         }
         b.rewind.setOnClickListener { seek(position - 10_000) }
         b.forward.setOnClickListener { seek(position + 10_000) }
-        b.core.setOnClickListener {
-            coreDialogOpen = true; handler.removeCallbacks(hideControls)
-            AlertDialog.Builder(this).setTitle("切换播放核心").setSingleChoiceItems(arrayOf("系统 MediaPlayer", "ExoPlayer"), core.ordinal) { dialog, which ->
-                val chosen = Core.values()[which]
-                if (chosen != core) { capture(); save(); release(); core = chosen; store.core = chosen; failed = false; start() }
-                dialog.dismiss()
-            }.setNegativeButton("取消", null).create().apply { setOnDismissListener { coreDialogOpen = false; scheduleHide(); applyFullscreen() }; show() }
-        }
         b.seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {}
             override fun onStartTrackingTouch(seekBar: SeekBar?) { scrubbing = true; handler.removeCallbacks(hideControls) }
             override fun onStopTrackingTouch(seekBar: SeekBar?) { scrubbing = false; seek(duration * (seekBar?.progress ?: 0) / 1000); scheduleHide() }
         })
         b.toggle.requestFocus(); updateControls()
+    }
+    private fun loadEpisodes() {
+        fun apply(result: WorkDetail) {
+            detail = result
+            val series = result.episodes.size > 1 || result.seasons.any { it.name.isNotBlank() }
+            b.episodes.visibility = if (series) View.VISIBLE else View.GONE
+            val season = result.seasons.firstOrNull { group -> group.episodes.any { it.path == episode.path } }
+            val number = season?.episodes?.indexOfFirst { it.path == episode.path }?.plus(1)
+            b.title.text = if (series && number != null && number > 0) "${work.name} · 第 $number 集" else work.name
+            updateControls()
+        }
+        job({ library.detail(connection, work, it) }, { apply(it) }, { })
+    }
+    private fun stepEpisode(offset: Int) {
+        val result = detail ?: return
+        val episodes = result.episodes
+        val index = episodes.indexOfFirst { it.path == episode.path }
+        if (index < 0) return
+        episodes.getOrNull(index + offset)?.let { switchEpisode(it, result); scheduleHide() }
+    }
+    private fun audioPreferencePath() = if (engine == PlaybackEngine.EXOPLAYER) episode.path else episode.path + "\n" + engine.name
+    private fun restoreAudioPreference() {
+        if (audioPreferenceApplied) return
+        val current = playback ?: return
+        val tracks = current.audioTracks()
+        if (tracks.isEmpty()) return
+        audioPreferenceApplied = true
+        val saved = store.audioPreference(connection.id, audioPreferencePath()) ?: return
+        val matching = tracks.firstOrNull { it.preferenceKey == saved.first && it.playable }
+            ?: tracks.firstOrNull { it.id == saved.first && it.playable }
+            ?: tracks.filter { it.label == saved.second }.singleOrNull()
+        matching?.let { current.selectAudioTrack(it.id) { } }
+    }
+    private fun showAudioTracks() {
+        val current = playback ?: return
+        val tracks = current.audioTracks()
+        if (tracks.size <= 1) return
+        overlayOpen = true; handler.removeCallbacks(hideControls)
+        UiDialog.Builder(this).setTitle("声道选择").setSingleChoiceItems(tracks.map { it.label }.toTypedArray(), tracks.indexOfFirst { it.selected }) { dialog, which ->
+            if (playback === current) {
+                val selected = tracks[which]
+                current.selectAudioTrack(selected.id) { success ->
+                    if (playback === current) {
+                        if (success) {
+                            store.saveAudioPreference(connection.id, audioPreferencePath(), selected.preferenceKey, selected.label)
+                            audioPreferenceApplied = true
+                        } else error("此音轨暂不可用，请选择其他音轨")
+                    }
+                }
+            }
+            dialog.dismiss()
+        }.setNegativeButton("关闭", null).create().apply {
+            setOnDismissListener { overlayOpen = false; scheduleHide(); applyFullscreen() }; show()
+        }
+    }
+    private fun showEngines() {
+        overlayOpen = true; handler.removeCallbacks(hideControls)
+        val engines = PlaybackEngine.entries
+        UiDialog.Builder(this).setTitle("播放核心")
+            .setSingleChoiceItems(engines.map { it.label }.toTypedArray(), engines.indexOf(engine)) { dialog, which ->
+                val selected = engines[which]
+                dialog.dismiss()
+                if (selected != engine) {
+                    save(); release()
+                    engine = selected; store.playbackEngine = selected; b.engine.text = selected.label
+                    failed = false; audioPreferenceApplied = false
+                    start(); updateControls()
+                }
+            }.setNegativeButton("取消", null).create().apply {
+                setOnDismissListener { overlayOpen = false; scheduleHide(); applyFullscreen() }; show()
+            }
+    }
+    private fun closeEpisodes() {
+        episodeDrawer?.let { b.root.removeView(it) }; episodeDrawer = null
+        overlayOpen = false; scheduleHide(); applyFullscreen()
+    }
+    private fun switchEpisode(selected: Episode, result: WorkDetail) {
+        if (selected.path == episode.path) return
+        save(); episode = selected
+        intent.putExtra("videoPath", episode.path).putExtra("videoName", episode.name).putExtra("season", episode.season)
+        position = 0; duration = 0; failed = false; desiredPlay = true
+        val season = result.seasons.first { group -> group.episodes.any { it.path == episode.path } }
+        b.title.text = "${work.name} · 第 ${season.episodes.indexOfFirst { it.path == episode.path } + 1} 集"
+        ready = false; audioPreferenceApplied = false; playbackWarning = null; buffering = true
+        b.seek.isEnabled = false; b.loading.visibility = View.VISIBLE; b.status.text = "缓冲中"
+        updateControls()
+        playback?.open(connection, episode.path, b.surface.holder, 0, true) ?: start()
+    }
+    private fun showEpisodes() {
+        val result = detail ?: return
+        if (episodeDrawer != null) { closeEpisodes(); return }
+        overlayOpen = true; handler.removeCallbacks(hideControls)
+        val overlay = FrameLayout(this).apply { setBackgroundColor(0x22000000); setOnClickListener { closeEpisodes() } }
+        episodeDrawer = overlay
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(20), dp(20), dp(16))
+            setBackgroundColor(0xCC171E28.toInt()); isClickable = true
+        }
+        val width = minOf(dp(360), (resources.displayMetrics.widthPixels * .48f).toInt())
+        overlay.addView(panel, FrameLayout.LayoutParams(width, -1, Gravity.RIGHT))
+        val heading = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        heading.addView(TextView(this).apply { text = "选集"; textSize = 20f; setTextColor(Color.WHITE) }, LinearLayout.LayoutParams(0, -2, 1f))
+        heading.addView(android.widget.ImageButton(this).apply {
+            setImageDrawable(PlayerIcon(PlayerIcon.Kind.BACK)); contentDescription = "关闭选集"
+            setBackgroundResource(R.drawable.player_button); setPadding(dp(12), dp(12), dp(12), dp(12))
+            setOnClickListener { closeEpisodes() }
+        }, LinearLayout.LayoutParams(dp(48), dp(48)))
+        panel.addView(heading)
+        val tabs = LinearLayout(this)
+        val tabScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false; addView(tabs) }
+        if (result.seasons.any { it.name.isNotBlank() }) panel.addView(tabScroll, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(16) })
+        val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val scroll = ScrollView(this).apply { addView(rows) }
+        panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        fun render(index: Int) {
+            for (i in 0 until tabs.childCount) tabs.getChildAt(i).isSelected = i == index
+            rows.removeAllViews()
+            var selectedRow: View? = null
+            result.seasons[index].episodes.forEachIndexed { number, item ->
+                val row = Button(this).apply {
+                    text = "第 ${number + 1} 集"; isSelected = item.path == episode.path
+                    gravity = Gravity.LEFT or Gravity.CENTER_VERTICAL; setAllCaps(false)
+                    setPadding(dp(16), dp(12), dp(16), dp(12)); minimumHeight = dp(52)
+                    setBackgroundResource(R.drawable.ui_button)
+                    setOnClickListener { switchEpisode(item, result); closeEpisodes() }
+                }
+                rows.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
+                if (row.isSelected) selectedRow = row
+            }
+            scroll.post { selectedRow?.let { scroll.scrollTo(0, it.top); it.requestFocus() } ?: scroll.scrollTo(0, 0) }
+        }
+        result.seasons.forEachIndexed { index, season ->
+            tabs.addView(Button(this).apply {
+                text = season.name.ifBlank { "剧集" }; setAllCaps(false); setBackgroundResource(R.drawable.ui_button)
+                setOnClickListener { render(index) }
+            }, LinearLayout.LayoutParams(-2, dp(48)).apply { rightMargin = dp(8) })
+        }
+        val current = result.seasons.indexOfFirst { group -> group.episodes.any { it.path == episode.path } }.coerceAtLeast(0)
+        b.root.addView(overlay, FrameLayout.LayoutParams(-1, -1)); render(current)
+        panel.translationX = width.toFloat(); panel.animate().translationX(0f).setDuration(180).start()
     }
     private fun requestFocus(): Boolean {
         if (focusHeld) return true
@@ -117,26 +277,35 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
         return focusHeld
     }
     private fun start() {
-        if (!resumed || !surfaceReady || engine != null || failed) return
-        val expected = ++attempt; ready = false; videoRatio = 0f
-        b.status.text = "正在准备"; b.seek.isEnabled = false
+        if (!resumed || !surfaceReady || playback != null || failed) return
+        val expected = ++attempt; ready = false; playbackWarning = null; videoRatio = 0f; audioPreferenceApplied = false
+        b.status.text = "缓冲中"; b.seek.isEnabled = false
         if (desiredPlay) requestFocus()
-        val listener = object : Engine.Listener {
-            private fun current() = resumed && expected == attempt && engine != null
-            override fun ready() { if (current()) { ready = true; handler.removeCallbacks(timeout); b.seek.isEnabled = true; b.status.text = ""; b.loading.visibility = View.GONE; updateControls(); scheduleHide() } }
+        val listener = object : PlaybackPlayer.Listener {
+            private fun current() = resumed && expected == attempt && playback != null
+            override fun ready() { if (current()) { ready = true; b.seek.isEnabled = true; b.status.text = ""; b.loading.visibility = View.GONE; updateControls(); scheduleHide() } }
             override fun buffering(active: Boolean) { if (current()) {
-                b.status.text = if (active) "缓冲中" else ""
+                buffering = active
+                b.status.text = if (active) "缓冲中" else playbackWarning.orEmpty()
                 b.loading.visibility = if (active) View.VISIBLE else View.GONE
             } }
             override fun ended() { if (current()) { capture(); position = duration; desiredPlay = false; save(); b.status.text = "播放结束"; updateControls(); setControlsVisible(true) } }
+            override fun warning(message: String?) { if (current()) {
+                playbackWarning = message
+                if (ready && !buffering) b.status.text = message.orEmpty()
+                updateControls()
+            } }
             override fun failed(message: String) { if (current()) fail(message) }
             override fun videoSize(width: Int, height: Int, pixelRatio: Float) {
                 if (current() && width > 0 && height > 0) { videoRatio = width * pixelRatio / height; fitVideo() }
             }
         }
-        val created: Engine = if (core == Core.SYSTEM) SystemEngine(this, listener) else ExoEngine(this, library.dav, listener)
-        engine = created
-        try { created.start(connection, episode.path, b.surface.holder, position, desiredPlay); handler.postDelayed(timeout, 25_000) }
+        val created: PlaybackPlayer = when (engine) {
+            PlaybackEngine.EXOPLAYER -> Media3Player(this, listener)
+            PlaybackEngine.MEDIAPLAYER -> SystemPlayer(this, listener)
+        }
+        playback = created
+        try { created.open(connection, episode.path, b.surface.holder, position, desiredPlay) }
         catch (_: Exception) { fail("无法打开当前媒体，请检查地址、认证或文件格式") }
     }
     private fun fail(message: String) {
@@ -145,10 +314,10 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     }
     private fun seek(target: Long) {
         if (!ready || duration <= 0) return
-        position = target.coerceIn(0, duration); engine?.seek(position); updateControls()
+        position = target.coerceIn(0, duration); playback?.seek(position); updateControls()
     }
     private fun capture() {
-        val e = engine ?: return
+        val e = playback ?: return
         if (ready && e.duration > 0) { duration = e.duration; position = e.position.coerceIn(0, duration) }
     }
     private fun save() {
@@ -158,17 +327,31 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     }
     private fun updateControls() {
         if (!::b.isInitialized) return
+        if (ready) restoreAudioPreference()
+        val episodes = detail?.episodes.orEmpty()
+        val current = episodes.indexOfFirst { it.path == episode.path }
+        b.previousEpisode.visibility = if (current > 0) View.VISIBLE else View.GONE
+        b.nextEpisode.visibility = if (current >= 0 && current < episodes.lastIndex) View.VISIBLE else View.GONE
+        b.audioTracks.visibility = if (ready && (playback?.audioTracks()?.size ?: 0) > 1) View.VISIBLE else View.GONE
         b.status.visibility = if (b.status.text.isEmpty()) View.GONE else View.VISIBLE
         val icon = if (failed || (duration > 0 && position >= duration)) PlayerIcon.Kind.REPLAY else if (desiredPlay) PlayerIcon.Kind.PAUSE else PlayerIcon.Kind.PLAY
         if (toggleKind != icon) { toggleKind = icon; b.toggle.setImageDrawable(PlayerIcon(icon)) }
         b.toggle.contentDescription = if (failed) "重试" else if (icon == PlayerIcon.Kind.REPLAY) "重新播放" else if (desiredPlay) "暂停" else "播放"
+        val currentPlayer = playback
+        b.network.visibility = if (currentPlayer == null) View.GONE else View.VISIBLE
+        if (currentPlayer != null) {
+            val speed = currentPlayer.downloadSpeed
+            val rate = if (speed == null) null else if (speed >= 1024 * 1024) "%.2f MB/s".format(java.util.Locale.ROOT, speed / (1024.0 * 1024))
+                else "%.0f KB/s".format(java.util.Locale.ROOT, speed / 1024.0)
+            b.network.text = listOfNotNull(rate, "缓冲 ${currentPlayer.bufferedDuration / 1000} 秒").joinToString(" · ")
+        }
         b.time.text = formatTime(position)
         b.totalTime.text = formatTime(duration)
         if (!b.seek.isPressed) b.seek.progress = if (duration > 0) (position * 1000 / duration).toInt() else 0
     }
     private fun release() {
-        attempt++; handler.removeCallbacks(timeout)
-        val old = engine; engine = null; ready = false; old?.release()
+        attempt++; buffering = false
+        val old = playback; playback = null; ready = false; old?.release()
     }
     private fun fitVideo() {
         if (videoRatio <= 0 || b.root.width == 0 || b.root.height == 0) return
@@ -179,6 +362,7 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
         val old = b.surface.layoutParams
         if (old.width != width || old.height != height) b.surface.layoutParams = FrameLayout.LayoutParams(width, height, android.view.Gravity.CENTER)
     }
+    override fun reloadAfterPause() { if (::b.isInitialized) loadEpisodes() }
     override fun onResume() {
         super.onResume(); if (!::b.isInitialized) return
         resumed = true; applyFullscreen(); start(); handler.post(ticker); scheduleHide()
@@ -196,7 +380,7 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     override fun surfaceDestroyed(holder: SurfaceHolder) { capture(); save(); surfaceReady = false; release() }
     private fun scheduleHide() {
         handler.removeCallbacks(hideControls)
-        if (controlsVisible && resumed && ready && desiredPlay && !failed && !scrubbing && !coreDialogOpen) handler.postDelayed(hideControls, 4000)
+        if (controlsVisible && resumed && ready && desiredPlay && !failed && !scrubbing && !overlayOpen) handler.postDelayed(hideControls, 4000)
     }
     private fun setControlsVisible(visible: Boolean) {
         controlsVisible = visible
@@ -208,7 +392,7 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     private fun applyFullscreen() {
         var flags = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
             View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-        if (Build.VERSION.SDK_INT >= 19) flags = flags or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        flags = flags or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         window.decorView.systemUiVisibility = flags
     }
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -224,6 +408,7 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
         val navigation = event.keyCode in arrayOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER)
         if (event.action == KeyEvent.ACTION_DOWN) {
+            if (event.keyCode == KeyEvent.KEYCODE_BACK && episodeDrawer != null) { closeEpisodes(); return true }
             if (navigation && !controlsVisible) { setControlsVisible(true); return true }
             if (controlsVisible) scheduleHide()
             when (event.keyCode) {
@@ -239,10 +424,11 @@ class PlayerActivity : BaseActivity(), SurfaceHolder.Callback {
     }
     companion object {
         fun launch(context: Activity, work: Work, episode: Episode, position: Long = 0) {
-            context.startActivity(Intent(context, PlayerActivity::class.java).putExtra("connection", work.connectionId)
+            val start = { context.startActivity(Intent(context, PlayerActivity::class.java).putExtra("connection", work.connectionId)
                 .putExtra("workPath", work.path).putExtra("workName", work.name).putExtra("cover", work.coverPath)
                 .putExtra("videoPath", episode.path).putExtra("videoName", episode.name).putExtra("season", episode.season)
-                .putExtra("position", position))
+                .putExtra("position", position)) }
+            (context as? BaseActivity)?.preparePlayback(start) ?: start()
         }
     }
 }

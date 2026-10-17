@@ -12,4 +12,16 @@ cache/
 .agents/
 .aws/
 reports/
-source-upload.b64
+*.b64
+*.jks
+*.keystore
+*.pem
+*.key
+.env
+.env.*
+snapshots/
+openlist-upload/
+
+/reference/
+
+third_party/media3-ffmpeg/src/main/jniLibs/

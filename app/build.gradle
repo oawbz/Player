@@ -4,31 +4,42 @@ plugins {
 }
 android {
     namespace 'cn.awbz.davplayer'
-    compileSdk 34
-    buildToolsVersion '34.0.0'
+    compileSdk 36
+    buildToolsVersion '35.0.0'
     defaultConfig {
         applicationId 'cn.awbz.davplayer'
-        minSdk 18
+        minSdk 23
         targetSdk 33
-        versionCode 5
-        versionName '0.1.4'
-        multiDexEnabled true
+        versionCode 60
+        versionName '0.4.2-dual-player'
     }
     buildFeatures { viewBinding true; buildConfig true }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
     }
-    kotlinOptions { jvmTarget = '1.8' }
+    kotlinOptions { jvmTarget = '11' }
     signingConfigs { debug { enableV1Signing true; enableV2Signing true } }
-    buildTypes { release { minifyEnabled false } }
+    buildTypes {
+        release { minifyEnabled false }
+        // Local manual-test package: same existing signing identity, no debugger flag.
+        preview {
+            initWith release
+            debuggable false
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['release']
+        }
+    }
     lint { abortOnError true; checkReleaseBuilds true }
 }
 dependencies {
-    implementation 'androidx.media3:media3-exoplayer:1.2.1'
-    implementation('com.squareup.okhttp3:okhttp:3.12.13') { version { strictly '3.12.13' } }
-    implementation 'androidx.multidex:multidex:2.0.1'
+    implementation project(':media3-ffmpeg')
+    implementation 'androidx.media3:media3-exoplayer:1.8.0'
+    implementation 'androidx.media3:media3-exoplayer-hls:1.8.0'
+    implementation 'com.squareup.okhttp3:okhttp:3.12.13'
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.mockito:mockito-core:5.14.2'
+    testImplementation 'org.json:json:20240303'
     testImplementation 'com.squareup.okhttp3:mockwebserver:3.12.13'
     testImplementation 'net.sf.kxml:kxml2:2.3.0'
 }

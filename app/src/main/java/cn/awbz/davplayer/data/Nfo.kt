@@ -11,9 +11,9 @@ data class MediaMetadata(val title: String = "", val plot: String = "", val year
 /** Read local Kodi-compatible metadata only. External artwork/trailer URLs are not fetched. */
 object Nfo {
     const val LIMIT = 512 * 1024
-    fun select(entries: List<DavEntry>, workName: String, direct: List<Episode>): DavEntry? {
+    fun select(entries: List<MediaEntry>, workName: String, direct: List<Episode>): MediaEntry? {
         val files = entries.filter { !it.directory && it.name.endsWith(".nfo", true) }
-        for (name in listOf("tvshow.nfo", "movie.nfo", "$workName.nfo") +
+        for (name in listOf("movie.nfo", "tvshow.nfo", "$workName.nfo") +
             if (direct.size == 1) listOf(direct[0].name.substringBeforeLast('.') + ".nfo") else emptyList()) {
             files.firstOrNull { it.name.equals(name, true) }?.let { return it }
         }
@@ -21,7 +21,7 @@ object Nfo {
     }
     fun parse(xml: String): MediaMetadata {
         if (xml.length > LIMIT || Regex("<!\\s*(DOCTYPE|ENTITY)", RegexOption.IGNORE_CASE).containsMatchIn(xml))
-            throw DavFailure("NFO 过大或包含不允许的实体声明")
+            throw MediaFailure("NFO 过大或包含不允许的实体声明")
         val parser = XmlPullParserFactory.newInstance().newPullParser()
         parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
         runCatching { parser.setFeature("http://xmlpull.org/v1/doc/features.html#process-docdecl", false) }
@@ -36,13 +36,13 @@ object Nfo {
         try {
             var event = parser.eventType
             while (event != XmlPullParser.END_DOCUMENT) {
-                if (parser.depth > 32 || event == XmlPullParser.DOCDECL) throw DavFailure("NFO 层级或声明不受支持")
+                if (parser.depth > 32 || event == XmlPullParser.DOCDECL) throw MediaFailure("NFO 层级或声明不受支持")
                 when (event) {
                     XmlPullParser.START_TAG -> {
                         texts[parser.depth] = StringBuilder()
                         tags[parser.depth] = parser.name
                         if (parser.depth == 1) {
-                            if (root.isNotEmpty() || parser.name !in setOf("movie", "tvshow", "episodedetails")) throw DavFailure("NFO 不是影片或剧集 XML")
+                            if (root.isNotEmpty() || parser.name !in setOf("movie", "tvshow", "episodedetails")) throw MediaFailure("NFO 不是影片或剧集 XML")
                             root = parser.name
                         }
                         if (parser.depth == 3 && parser.name == "rating" && tags[2] == "ratings") {
@@ -53,7 +53,7 @@ object Nfo {
                     }
                     XmlPullParser.TEXT, XmlPullParser.CDSECT -> texts[parser.depth]?.append(parser.text)
                     XmlPullParser.ENTITY_REF -> {
-                        if (parser.name !in setOf("amp", "lt", "gt", "quot", "apos") && !parser.name.startsWith("#")) throw DavFailure("NFO 包含不允许的实体")
+                        if (parser.name !in setOf("amp", "lt", "gt", "quot", "apos") && !parser.name.startsWith("#")) throw MediaFailure("NFO 包含不允许的实体")
                         texts[parser.depth]?.append(parser.text ?: "")
                     }
                     XmlPullParser.END_TAG -> {
@@ -74,8 +74,8 @@ object Nfo {
                 }
                 event = parser.nextToken()
             }
-        } catch (e: DavFailure) { throw e } catch (_: Exception) { throw DavFailure("NFO XML 无法解析") }
-        if (root.isEmpty() || !closed) throw DavFailure("NFO XML 不完整")
+        } catch (e: MediaFailure) { throw e } catch (_: Exception) { throw MediaFailure("NFO XML 无法解析") }
+        if (root.isEmpty() || !closed) throw MediaFailure("NFO XML 不完整")
         val rating = ratings.firstOrNull { it.first }?.second ?: ratings.firstOrNull()?.second
             ?: fields["rating"]?.toDoubleOrNull()?.takeIf { it.isFinite() && it in 0.0..10.0 }
         val date = (fields["premiered"] ?: fields["aired"]).orEmpty().takeIf { Regex("\\d{4}-\\d{2}-\\d{2}").matches(it) }.orEmpty()

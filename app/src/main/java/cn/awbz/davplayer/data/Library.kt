@@ -1,50 +1,37 @@
 package cn.awbz.davplayer.data
 
-import java.util.concurrent.ConcurrentHashMap
-
-class Library(val dav: DavClient) {
-    private data class Listing(val at: Long, val entries: List<DavEntry>)
-    private val cache = ConcurrentHashMap<String, Listing>()
-    fun clear() = cache.clear()
-    fun list(connection: Connection, path: String, requests: Requests, refresh: Boolean = false): List<DavEntry> {
-        val key = connection.id + ":" + path
-        val old = cache[key]
-        if (!refresh && old != null && System.currentTimeMillis() - old.at < 60_000) return old.entries
-        val entries = dav.list(connection, path, requests)
-        if (cache.size >= 128) cache.clear()
-        cache[key] = Listing(System.currentTimeMillis(), entries)
-        return entries
-    }
-    fun works(connection: Connection, category: Category, requests: Requests): List<Work> =
-        list(connection, category.path, requests).filter { it.directory }
-            .map { Work(connection.id, it.url.encodedPath(), it.name) }
-    fun cover(connection: Connection, work: Work, requests: Requests): Work =
-        work.copy(coverPath = MediaRules.cover(list(connection, work.path, requests))?.url?.encodedPath())
-    fun detail(connection: Connection, work: Work, requests: Requests): WorkDetail {
+/** Directory browsing only; selected resource paths are reused by detail-only loading. */
+class Library(val catalog: MediaCatalog) {
+    fun list(connection: Connection, path: String, requests: RequestScope): List<MediaEntry> = catalog.list(connection, path, requests).filterNot { MediaRules.isHidden(it.name) }
+    fun works(connection: Connection, category: Category, requests: RequestScope): List<Work> =
+        list(connection, category.path, requests).filter { it.directory }.sortedWith(Comparator { a, b ->
+            val time = when {
+                a.modifiedAt == null && b.modifiedAt == null -> 0
+                a.modifiedAt == null -> 1
+                b.modifiedAt == null -> -1
+                else -> b.modifiedAt.compareTo(a.modifiedAt)
+            }
+            if (time != 0) time else NaturalOrder.compare(a.name, b.name).takeIf { it != 0 } ?: a.path.compareTo(b.path)
+        }).map { Work(connection.id, it.path, it.name) }
+    fun detail(connection: Connection, work: Work, requests: RequestScope): WorkDetail {
         val entries = list(connection, work.path, requests)
         val seasons = mutableListOf<Season>()
         val notices = mutableListOf<String>()
         val direct = MediaRules.episodes(entries)
         if (direct.isNotEmpty()) seasons.add(Season("", direct))
-        // Only direct season children. Never traverse a whole server or arbitrary deeper folders.
-        val directories = entries.filter { it.directory }
-        if (directories.size > 100) throw DavFailure("作品分季目录超过 100 个，请整理目录")
+        val directories = entries.filter { it.directory && !MediaRules.isHidden(it.name) }.sortedWith(Comparator { a, b -> NaturalOrder.compare(a.name, b.name) })
+        if (directories.size > 100) throw MediaFailure("作品分季目录超过 100 个，请整理目录")
         for (directory in directories) {
             try {
-                val episodes = MediaRules.episodes(list(connection, directory.url.encodedPath(), requests), directory.name)
+                val episodes = MediaRules.episodes(list(connection, directory.path, requests), directory.name)
                 if (episodes.isNotEmpty()) seasons.add(Season(directory.name, episodes))
-            } catch (e: DavFailure) { notices.add("部分分季目录无法加载，可刷新重试") }
+            } catch (_: Exception) {
+                if (requests.isCancelled || Thread.currentThread().isInterrupted) throw MediaFailure("请求已取消")
+                notices.add("部分分季目录无法加载，可刷新重试")
+            }
         }
         if (seasons.size > 1 && direct.isNotEmpty()) seasons[0] = Season("未分季", direct)
-        val nfoFile = Nfo.select(entries, work.name, direct)
-        var metadata = MediaMetadata()
-        if (nfoFile != null) {
-            try {
-                val bytes = dav.read(connection, nfoFile.url.encodedPath(), requests, Nfo.LIMIT)
-                val decoder = Charsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
-                metadata = Nfo.parse(decoder.decode(java.nio.ByteBuffer.wrap(bytes)).toString())
-            } catch (_: Exception) { notices.add("NFO 无法读取，请检查 XML、UTF-8 编码及文件大小（最多 512 KB）") }
-        }
-        return WorkDetail(work.copy(coverPath = MediaRules.cover(entries)?.url?.encodedPath()), seasons, metadata.plot, notices.distinct(), metadata)
+        return WorkDetail(work.copy(coverPath = null), seasons, "", notices.distinct(),
+            assets = DetailAssets(Nfo.select(entries, work.name, direct)?.path, PosterFiles.path(connection, work.path)))
     }
 }

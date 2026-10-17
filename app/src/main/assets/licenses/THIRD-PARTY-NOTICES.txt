@@ -1,0 +1,19 @@
+Cloud Player third-party components
+
+AndroidX Media3 1.8.0, including the FFmpeg decoder Java/JNI bridge:
+https://github.com/androidx/media/tree/1.8.0
+Apache License 2.0: androidx-media-LICENSE.txt
+Upstream notice: androidx-media-NOTICE.txt
+
+FFmpeg 6.0.1, audio decoders and resampler only:
+https://ffmpeg.org/releases/ffmpeg-6.0.1.tar.xz
+GNU LGPL 2.1 or later: FFmpeg-LGPL-2.1.txt
+Build and relinking instructions: docs/media3-ffmpeg.md and build-ffmpeg-docker.sh
+
+OkHttp 3.12.13 and its Okio dependency:
+https://github.com/square/okhttp/tree/parent-3.12.13
+https://github.com/square/okio
+Apache License 2.0 (text in androidx-media-LICENSE.txt).
+
+Ghosten is no longer a runtime dependency. Its original license is retained
+in docs/licenses/Ghosten-AGPL-3.0.txt for historical attribution only.

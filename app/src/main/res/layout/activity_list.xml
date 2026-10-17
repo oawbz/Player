@@ -2,8 +2,8 @@
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
         <Button android:id="@+id/back" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="返回" />
         <TextView android:id="@+id/title" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:textSize="24sp" android:padding="8dp" />
-        <Button android:id="@+id/action" android:layout_width="wrap_content" android:layout_height="wrap_content" android:visibility="gone" />
-    </LinearLayout>
-    <TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="8dp" android:textColor="#B1C1CE" />
+        </LinearLayout>
+    <TextView android:id="@+id/status" android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="8dp" android:textColor="@color/text_secondary" />
     <ListView android:id="@+id/list" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:dividerHeight="8dp" />
-</LinearLayout>
+<Button android:id="@+id/action" android:layout_width="match_parent" android:layout_height="56dp" android:visibility="gone" android:layout_marginTop="12dp" android:background="@drawable/detail_play_button" android:textColor="#101010" />
+    </LinearLayout>

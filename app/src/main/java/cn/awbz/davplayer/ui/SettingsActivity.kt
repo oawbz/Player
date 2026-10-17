@@ -1,6 +1,5 @@
 package cn.awbz.davplayer.ui
 
-import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.text.InputType
@@ -25,53 +24,64 @@ class SettingsActivity : BaseActivity() {
     }
     override fun onResume() { super.onResume(); render() }
     private fun render() {
-        b.content.removeAllViews(); b.status.text = "分类配置仅影响应用，不修改服务器文件"
+        b.content.removeAllViews(); b.status.text = "管理播放偏好、连接和媒体分类"
         b.content.addView(text("播放核心", 22f))
-        b.content.addView(button(if (store.core == Core.SYSTEM) "当前：系统 MediaPlayer" else "当前：ExoPlayer") {
-            AlertDialog.Builder(this).setTitle("默认播放核心").setSingleChoiceItems(arrayOf("系统 MediaPlayer", "ExoPlayer"), store.core.ordinal) { dialog, which ->
-                store.core = Core.values()[which]; dialog.dismiss(); render()
-            }.setNegativeButton("取消", null).show()
+        b.content.addView(button("当前核心：${store.playbackEngine.label}  ›") {
+            val engines = cn.awbz.davplayer.playback.PlaybackEngine.entries
+            UiDialog.Builder(this).setTitle("播放核心")
+                .setSingleChoiceItems(engines.map { it.label }.toTypedArray(), engines.indexOf(store.playbackEngine)) { dialog, which ->
+                    store.playbackEngine = engines[which]; dialog.dismiss(); render()
+                }.setNegativeButton("取消", null).show()
         })
-        b.content.addView(text("WebDAV 连接", 22f))
-        store.connections().forEach { connection -> b.content.addView(button(connection.name + if (connection.authMode == AuthMode.ANONYMOUS) " · 匿名访问" else " · 用户名密码") { editConnection(connection) }) }
-        b.content.addView(button("添加 WebDAV 连接") { editConnection(null) })
+        b.content.addView(text("OpenList 连接", 22f))
+        store.connections().forEach { connection -> b.content.addView(button(connection.name + if (connection.authMode == AuthMode.ANONYMOUS) " · 匿名访问  ›" else " · 用户名密码  ›") { editConnection(connection) }) }
+        b.content.addView(button("＋ 添加 OpenList 连接") { editConnection(null) })
         b.content.addView(text("分类", 22f))
         store.categories().forEach { category ->
-            b.content.addView(button(category.name) {
-                AlertDialog.Builder(this).setTitle(category.name).setItems(arrayOf("修改名称", "重新选择目录", "删除分类")) { _, which ->
+            b.content.addView(button(category.name + "  ›") {
+                UiDialog.Builder(this).setTitle(category.name).setItems(arrayOf("修改名称", "重新选择目录", "删除分类")) { _, which ->
                     when (which) {
                         0 -> prompt("分类名称", category.name) { store.saveCategory(category.copy(name = it)); render() }
                         1 -> chooseConnection(category)
-                        2 -> AlertDialog.Builder(this).setTitle("删除分类？").setMessage("仅删除分类配置，服务器文件及播放记录会保留。")
+                        2 -> UiDialog.Builder(this).setTitle("删除分类？").setMessage("仅删除分类配置，服务器文件及播放记录会保留。")
                             .setNegativeButton("取消", null).setPositiveButton("删除") { _, _ -> store.deleteCategory(category.id); render() }.show()
                     }
                 }.show()
             })
         }
-        b.content.addView(button("添加分类") { chooseConnection(null) })
-        b.content.addView(text("影片资料：在作品目录放入 movie.nfo 或 tvshow.nfo（Kodi XML，UTF-8，最多 512 KB），用于简介、评分、年份和时长。\n账号密码保存在应用私有区域，禁止系统备份；旧系统无法抵抗 root 或设备被控制。", 14f))
+        b.content.addView(button("＋ 添加分类") { chooseConnection(null) })
+        b.content.addView(text("使用 OpenList API，添加文件夹作为分类，读取 movie.nfo 和 poster.jpg；海报优先读取缓存，可见内容缺图自动下载，分类和详情可手动刷新。\n账号密码保存在应用私有区域，禁止系统备份；旧系统无法抵抗 root 或设备被控制。", 14f))
     }
     private fun chooseConnection(category: Category?) {
         val connections = store.connections()
-        if (connections.isEmpty()) { error("请先添加 WebDAV 连接"); return }
+        if (connections.isEmpty()) { error("请先添加 OpenList 连接"); return }
         fun select(connection: Connection) {
             startActivityForResult(Intent(this, DirectoryActivity::class.java).putExtra("connection", connection.id)
                 .putExtra("category", category?.id).putExtra("name", category?.name)
                 .putExtra("path", if (category?.connectionId == connection.id) category.path else null), 1)
         }
-        if (connections.size == 1) select(connections[0]) else AlertDialog.Builder(this).setTitle("选择 WebDAV 连接")
+        if (connections.size == 1) select(connections[0]) else UiDialog.Builder(this).setTitle("选择 OpenList 连接")
             .setItems(connections.map { it.name }.toTypedArray()) { _, which -> select(connections[which]) }.show()
+    }
+    private fun styleAuthOption(option: RadioButton) {
+        option.buttonDrawable = android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT)
+        option.setBackgroundResource(R.drawable.ui_button)
+        option.setPadding(dp(12), dp(12), dp(12), dp(12)); option.minHeight = dp(48)
+        option.layoutParams = RadioGroup.LayoutParams(0, -2, 1f).apply { rightMargin = dp(8); bottomMargin = dp(12) }
     }
     private fun editConnection(old: Connection?) {
         val container = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), 0, dp(16), 0) }
         fun input(hintText: String, value: String, type: Int = InputType.TYPE_CLASS_TEXT): EditText = EditText(this).apply {
+            container.addView(text(hintText, 14f))
+            setBackgroundResource(R.drawable.ui_input); setPadding(dp(12), dp(12), dp(12), dp(12))
+            layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) }
             hint = hintText; setText(value); inputType = type; setSingleLine(true); isSaveEnabled = false; container.addView(this)
         }
-        val name = input("连接名称", old?.name ?: "")
-        val url = input("WebDAV 地址（含根目录）", old?.baseUrl ?: "", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        val name = input("连接名称", old?.name ?: "OpenList")
+        val url = input("OpenList 服务地址", old?.baseUrl ?: "", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
         val mode = RadioGroup(this).apply { orientation = RadioGroup.HORIZONTAL; container.addView(this) }
-        mode.addView(RadioButton(this).apply { id = R.id.auth_anonymous; text = "匿名访问" })
-        mode.addView(RadioButton(this).apply { id = R.id.auth_basic; text = "用户名密码" })
+        mode.addView(RadioButton(this).apply { id = R.id.auth_anonymous; text = "匿名访问"; styleAuthOption(this) })
+        mode.addView(RadioButton(this).apply { id = R.id.auth_basic; text = "用户名密码"; styleAuthOption(this) })
         val user = input("用户名", old?.username ?: "")
         val password = input("密码（可留空）", old?.password ?: "", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
         val note = text("先测试连接，成功后保存。使用 HTTP 时账号和视频会以明文传输。", 14f); container.addView(note)
@@ -84,7 +94,7 @@ class SettingsActivity : BaseActivity() {
         mode.check(if (old?.authMode == AuthMode.BASIC) R.id.auth_basic else R.id.auth_anonymous)
         updateMode()
         val scroll = ScrollView(this).apply { addView(container) }
-        val dialog = AlertDialog.Builder(this).setTitle(if (old == null) "添加连接" else "编辑连接").setView(scroll)
+        val dialog = UiDialog.Builder(this).setTitle(if (old == null) "添加连接" else "编辑连接").setView(scroll)
             .setNegativeButton("取消", null).setPositiveButton("测试并保存", null).create()
         fun enableForm(enabled: Boolean) {
             listOf(name, url, user, password).forEach { it.isEnabled = enabled }
@@ -92,24 +102,24 @@ class SettingsActivity : BaseActivity() {
         }
         dialog.setOnShowListener {
             dialog.window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            dialog.getButton(UiDialog.BUTTON_POSITIVE).setOnClickListener {
                 try {
                     val label = name.text.toString().trim()
                     if (label.isEmpty() || label.length > 80) { name.error = "请输入 1～80 个字符"; return@setOnClickListener }
                     val authMode = if (mode.checkedRadioButtonId == R.id.auth_basic) AuthMode.BASIC else AuthMode.ANONYMOUS
                     if (authMode == AuthMode.BASIC && user.text.toString().isBlank()) { user.error = "请输入用户名"; return@setOnClickListener }
-                    val base = DavUrls.base(url.text.toString())
+                    val base = MediaPaths.base(url.text.toString())
                     val changedRoot = old != null && base.toString() != old.baseUrl
                     val connection = Connection(if (changedRoot || old == null) UUID.randomUUID().toString() else old.id,
                         label, base.toString(), if (authMode == AuthMode.BASIC) user.text.toString() else "", if (authMode == AuthMode.BASIC) password.text.toString() else "", authMode)
-                    enableForm(false); dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false; note.text = "正在测试连接…"
-                    job({ library.dav.list(connection, base.encodedPath(), it) }, {
+                    enableForm(false); dialog.getButton(UiDialog.BUTTON_POSITIVE).isEnabled = false; note.text = "正在测试连接…"
+                    job({ library.list(connection, base.rawPath, it) }, {
                         if (dialog.isShowing) {
                             // A different endpoint is a new connection; old categories and credentials remain recoverable.
-                            store.saveConnection(connection); library.clear(); app.posters.clear(); dialog.dismiss(); render()
+                            store.saveConnection(connection); dialog.dismiss(); render()
                         }
-                    }, { message -> if (dialog.isShowing) { enableForm(true); note.text = message; dialog.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true } })
-                } catch (e: DavFailure) { note.text = e.userMessage }
+                    }, { message -> if (dialog.isShowing) { enableForm(true); note.text = message; dialog.getButton(UiDialog.BUTTON_POSITIVE).isEnabled = true } })
+                } catch (e: MediaFailure) { note.text = e.userMessage }
             }
         }
         dialog.show()

@@ -1,0 +1,14 @@
+FROM davplayer-android:35-temurin17.0.20.1-1
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+# Pinned base API 36 r2, not the moving extension-SDK packages. Official SDK repository checksum.
+RUN curl -fL --retry 3 --connect-timeout 20 --max-time 600 \
+    https://dl.google.com/android/repository/platform-36_r02.zip -o /tmp/platform36.zip \
+ && echo '2c1a80dd4d9f7d0e6dd336ec603d9b5c55a6f576  /tmp/platform36.zip' | sha1sum -c - \
+ && mkdir -p /tmp/davplayer-sdk36 \
+ && unzip -q /tmp/platform36.zip -d /tmp/davplayer-sdk36 \
+ && test "$(find /tmp/davplayer-sdk36 -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 1 \
+ && mv /tmp/davplayer-sdk36/* /opt/android-sdk-linux/platforms/android-36 \
+ && test -f /opt/android-sdk-linux/platforms/android-36/android.jar \
+ && rm -rf /tmp/davplayer-sdk36 /tmp/platform36.zip
+LABEL cn.awbz.davplayer.sdk.platform="36-r2" \
+      cn.awbz.davplayer.sdk.source.sha1="2c1a80dd4d9f7d0e6dd336ec603d9b5c55a6f576"

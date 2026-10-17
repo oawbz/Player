@@ -1,6 +1,5 @@
 package cn.awbz.davplayer.data
 
-import okhttp3.HttpUrl
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -20,11 +19,11 @@ class NfoTest {
     }
     @Test fun rejectsDtdTruncationAndOversizedInput() {
         for (xml in listOf("<!DOCTYPE movie [<!ENTITY x SYSTEM 'file:///fixture'>]><movie><plot>&x;</plot></movie>", "<movie><plot>incomplete", "<html/>", " ".repeat(Nfo.LIMIT + 1))) {
-            try { Nfo.parse(xml); fail("must reject invalid NFO") } catch (_: DavFailure) {}
+            try { Nfo.parse(xml); fail("must reject invalid NFO") } catch (_: MediaFailure) {}
         }
     }
     @Test fun picksKnownSidecarWithoutChoosingAnArbitraryEpisodeNfo() {
-        fun entry(name: String) = DavEntry(HttpUrl.parse("https://fixture.invalid/dav/$name")!!, name, false)
+        fun entry(name: String) = MediaEntry("/dav/$name", name, false)
         val list = listOf(entry("unrelated.nfo"), entry("Film.nfo"), entry("movie.nfo"))
         assertEquals("movie.nfo", Nfo.select(list, "Film", listOf(Episode("/dav/Film.mkv", "Film.mkv")))!!.name)
         assertNull(Nfo.select(listOf(entry("a.nfo"), entry("b.nfo")), "Show", emptyList()))

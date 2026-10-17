@@ -1,47 +1,25 @@
-# 验证记录
+# 构建与验收
 
-## 2026-10-10：Docker 构建通过
+仅在天翼云 SPanel server_id=19 的 /srv/davplayer 构建；不使用本地 Android SDK/NDK。同步源码前备份并完整替换 app/src，保留原有 signing 和 cache。不得上传凭据、私钥、应用资料缓存或 .codex。
 
-- 源码提交：`05c5ad239840b68a1c0bc3c691b5d59ed5f040ce`。
-- 在用户指定的天翼云执行 `testDebugUnitTest lintDebug assembleDebug`，构建成功。
-- 单元测试：4 个套件，17 项测试，0 失败、0 错误。覆盖目录解析、中文/特殊字符路径、自然排序、封面选择、简介、分季、认证传递、请求取消、重定向拒绝和 Range 边界。服务与凭据均为虚构测试数据。
-- lint：0 Error / 0 Fatal、32 Warning，主要为固定旧版本/目标 SDK、中文界面硬编码、样式及旧兼容 API 等提示。
-- APK：`cn.awbz.davplayer`，版本 `0.1.1`，versionCode 2，6,867,045 字节，minSdk 18、targetSdk 33。
-- 签名验证成功：v1 与 v2 均为 true。签名工具提示部分 META-INF 版本/构建元数据未受 JAR 签名保护，未声称所有 ZIP 元数据均受到 v1 保护。
-- APK SHA256：`64782d7a209024c0a81c888ca8581fa991eff8b92f05277877a96a596e9b1ddd`。取回本地后完整文件哈希与构建产物一致。
-- 新增认证测试：旧配置迁移、显式匿名访问不发送认证头（即使存在旧凭据）、用户名密码模式允许空密码。
-- 本地签名密钥权限为 600，受 Git 忽略；新版 APK 的签名证书与本地密钥一致。远程密钥缺失时构建停止，避免签名身份改变。
-- APK、签名密钥、连接配置、缓存和内部构建明细不提交公共仓库。
+```sh
+./build-android-docker.sh testDebugUnitTest lintPreview assemblePreview
+./verify-apk-docker.sh app/build/outputs/apk/preview/app-preview.apk
+```
 
-编译过程修复了两项兼容性问题：官方 Media3 OkHttp 数据源 AAR 要求 API 21，已移除并使用项目文件数据源；系统 MediaPlayer 改用公开的 `setDataSource(Context, Uri, Map)` 传递认证头。固定 SDK 基础镜像实际使用 JDK 21，因此项目派生镜像增加经 SHA256 校验的固定 JDK 17，保持既定 AGP/Gradle 组合。
+工具链：minSdk 23、compileSdk 36、targetSdk 33、Kotlin 2.2.0、AGP 8.9.2、Gradle 8.11.1、JDK 17 / Java 11。固定镜像与派生步骤见 docker/ 及构建脚本。签名目录缺失时构建停止，不生成替代密钥。
 
-## 2026-10-10：USB 播放故障与 302 修复
+自动检查覆盖 OpenList 登录/令牌重试/分页/特殊字符路径/取消，列表过滤与排序、NFO 解析、资料缓存与下载边界、播放前排空、音轨提示以及受控 MediaPlayer 生命周期。预览 APK 不可调试；签名、SDK、ELF 和 ZIP 对齐分别校验。
 
-- USB 设备为一加 PJZ110，Android 16 / API 36；未替代 API 18 验收。
-- 故障日志明确为视频 GET 返回 HTTP 302，DavDataSource 拒绝响应，ExoPlayer 报 Source error / 2000。
-- 0.1.2 支持视频 GET 最多 5 次重定向、签名下载 URL、Range 保留；跨源永久去除该请求链的 DAV 认证，禁止 HTTPS 降级、内嵌凭据和循环。目录请求策略不变。
-- 系统核心后台解析最终视频地址后使用公开 MediaPlayer API，禁止再次跨域自动跳转；该核心的真实播放尚未完成验收。
-- Docker `testDebugUnitTest lintDebug assembleDebug` 通过，20 项单元测试无失败，minSdk 18，v1/v2 签名通过。新增测试覆盖同源/跨源认证、签名下载地址、Range、循环和 URL 内嵌凭据拒绝。
-- 302 修复 APK 已通过 `adb -s` 覆盖安装，保留原配置。用户随后报告播放恢复；首帧缓冲与网络相关为用户判断，未通过吞吐测量证明。
-- 后续诊断构建增加仅含状态码、Range、字节计数和播放缓冲状态的 debug 日志，不记录 URL、认证头或凭据；构建通过，未打断当前播放安装。
+当前用户已反馈 0.4.0 的手动播放没有卡顿；0.4.1 已安装但自动海报滚动效果尚未记录验收结果；0.4.2 双核实现构建通过，真实 MediaPlayer/ExoPlayer 切换、解码、进度恢复和连续切集仍需用户手动测试。不能由这次无卡顿反推旧版卡顿的唯一原因。
 
-## 2026-10-10：播放器交互、详情页和 NFO
+安装、清数据、操作手机、推送或发布分别取得明确授权。设备操作使用 adb -s 核对序列号。安装不自动启动、不修改系统息屏设置；默认不清配置、缓存和观看记录。日志只记录数字、请求种类与状态，不输出地址、签名或认证。
 
-- 0.1.3 / versionCode 4：顶部标题与返回/设置图标、底部进度和播放/前后 10 秒图标；全屏画面点击切换控制栏，播放中 4 秒无操作自动隐藏。暂停、异常、拖动进度和核心对话框不自动隐藏，方向/确认键唤出控制。
-- 详情页改为大幅封面与渐变信息区、主播放按钮、分季横向选集、剧情简介展开；缺失资料不生成评分、年份或时长。
-- 统一读取 Kodi NFO：movie/tvshow/同名文件，支持新版默认评分与旧评分、分钟时长、年份和日期、类型、CDATA 简介；停止读取 description.txt。仅加载本地已有 NFO，不执行联网刮削或外部图片 URL。
-- 6 个测试套件、24 项测试全部通过；新增 NFO 数值、默认评分换算、CDATA、编码/实体和文件选择边界。lint 无 Error/Fatal，42 项 Warning。
-- 最终源码的 Docker `lintDebug assembleDebug` 通过；minSdk 18，targetSdk 33，v1/v2 签名验证通过。设置页提示也统一为 NFO。
-- 通过 USB 在 API 36 手机覆盖安装，保留配置。手机处于锁屏，尚未完成新详情页视觉、触屏控制栏和方向键交互验收；API 18 和真实遥控器仍未验证。
+## 2026-10-17 源码收敛验证
 
-## 尚未完成的验收
-
-构建、测试和 APK 检查不代表真实设备/服务可用。尚未安装到 API 18 真机。API 36 的实际 WebDAV 播放已有用户恢复反馈，双核心完整验收仍未完成。
-
-1. API 18 安装、启动、MultiDex、双核心类加载及旧系统 HTTPS/TLS。
-2. 实际 WebDAV 的中文与特殊路径、目录权限、认证、刷新、响应边界与取消请求。
-3. 封面缺失/损坏/过大；NFO 的真实刮削工具输出、UTF-8/BOM、多段文本、非法 XML 和大小边界。
-4. 两核心分别验证真实播放、暂停、Range 跳转、前后台恢复、媒体切换、Surface 重建、手动换核及异常。
-5. 播放记录恢复、视频移动/删除、音频焦点，以及电视遥控器和手机触屏交互。
-
-测试设备必须通过 `adb -s` 明确选择；报告不得包含真实账号密码、认证头或带凭据/签名参数的 URL。服务器目录只读，删除分类不删除 WebDAV 内容。
+- server_id=19 指定 Docker 的 testDebugUnitTest、lintPreview、assemblePreview 和 verify-apk-docker.sh 均成功。
+- 43 项测试，0 失败、0 错误；删除旧批量线程池的专用测试，保留取消 Future 后仍等待实际退出的队列测试。
+- 完整 lint：0 Error/Fatal、0 未使用资源问题，74 Warning（固定 SDK/依赖、中文文案、RTL、图标和界面布局等），未通过关闭 lint 掩盖问题。
+- APK 内仅有两种 ABI 的 libffmpegJNI.so，LOAD/RELRO 均为 16 KiB 对齐；v1/v2 签名和 ZIP 对齐通过。
+- APK SHA256：ee6d03532ab6236c828c1d30b9fe3a55b668c80373123f427f4c7ae113b14d40。
+- 未安装、未操作手机、未清除应用配置/缓存/观看记录；真实双核播放验收仍待手动完成。

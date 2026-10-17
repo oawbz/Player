@@ -3,9 +3,9 @@ package cn.awbz.davplayer.ui
 import android.graphics.*
 import android.graphics.drawable.Drawable
 
-/** Canvas icons work on API 18 without vector-drawable dependencies. */
+/** Shared Canvas icons for phone and TV controls. */
 class PlayerIcon(private val kind: Kind) : Drawable() {
-    enum class Kind { BACK, PLAY, PAUSE, REPLAY, REWIND, FORWARD, SETTINGS }
+    enum class Kind { BACK, PLAY, PAUSE, REPLAY, REWIND, FORWARD, SETTINGS, EPISODES, AUDIO, PREVIOUS, NEXT }
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; strokeWidth = 2f; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
     override fun draw(canvas: Canvas) {
         val saved = canvas.save()
@@ -24,6 +24,19 @@ class PlayerIcon(private val kind: Kind) : Drawable() {
                     paint.style = Paint.Style.FILL; paint.textSize = 9f; paint.typeface = Typeface.DEFAULT_BOLD; paint.textAlign = Paint.Align.CENTER
                     canvas.drawText("10", 12f, 16f, paint)
                 }
+            }
+            Kind.PREVIOUS, Kind.NEXT -> {
+                if (kind == Kind.PREVIOUS) { canvas.translate(24f, 0f); canvas.scale(-1f, 1f) }
+                paint.style = Paint.Style.FILL
+                val p = Path(); p.moveTo(5f, 5f); p.lineTo(17f, 12f); p.lineTo(5f, 19f); p.close(); canvas.drawPath(p, paint)
+                canvas.drawRect(18f, 5f, 21f, 19f, paint)
+            }
+            Kind.AUDIO -> {
+                path(4f, 9f, 8f, 9f, 13f, 5f, 13f, 19f, 8f, 15f, 4f, 15f, 4f, 9f)
+                canvas.drawArc(RectF(11f, 7f, 21f, 17f), -60f, 120f, false, paint)
+            }
+            Kind.EPISODES -> {
+                for (y in listOf(6f, 12f, 18f)) { canvas.drawCircle(4f, y, .7f, paint); canvas.drawLine(9f, y, 21f, y, paint) }
             }
             Kind.SETTINGS -> {
                 canvas.drawCircle(12f, 12f, 6f, paint); canvas.drawCircle(12f, 12f, 2f, paint)

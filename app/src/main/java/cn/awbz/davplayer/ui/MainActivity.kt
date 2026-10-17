@@ -13,39 +13,55 @@ class MainActivity : PosterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         b = ActivityMainBinding.inflate(layoutInflater); setContentView(b.root)
+        icon(b.settings, PlayerIcon.Kind.SETTINGS)
         b.settings.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
-        b.refresh.setOnClickListener { library.clear(); app.posters.clear(); load() }
     }
-    override fun onResume() { super.onResume(); load() }
+    override fun onResume() {
+        super.onResume()
+        load()
+    }
     private fun load() {
-        resetJobs(); b.rows.removeAllViews()
-        val histories = store.history()
+        clearPosterRequests(); resetJobs(); b.rows.removeAllViews()
+        val histories = store.history().filterNot { MediaRules.isHidden(it.workName) || MediaRules.isHidden(it.videoName) || MediaRules.isHidden(it.season) }
         if (histories.isNotEmpty()) {
             b.rows.addView(text("继续播放", 22f))
             val row = row()
             histories.forEach { h -> row.addView(poster(Work(h.connectionId, h.workPath, h.workName, h.coverPath), h), cardParams()) }
         }
         val categories = store.categories()
-        b.status.text = if (categories.isEmpty()) "在设置中连接 WebDAV，并添加分类开始观看" else ""
+        b.status.text = if (categories.isEmpty()) "在设置中连接 OpenList，并添加分类开始观看" else ""
         b.status.visibility = if (categories.isEmpty()) View.VISIBLE else View.GONE
         if (categories.isEmpty()) {
-            b.rows.addView(button("连接 WebDAV / 添加分类") { b.settings.performClick() }); return
+            b.rows.addView(button("连接 OpenList / 添加分类") { b.settings.performClick() }); return
         }
         for (category in categories) {
-            b.rows.addView(button("${category.name}  ›") {
+            val heading = button("${category.name}  ›") {
                 startActivity(Intent(this, CategoryActivity::class.java).putExtra("category", category.id))
-            })
+            }.apply { textSize = 22f; setTypeface(null, android.graphics.Typeface.BOLD) }
+            b.rows.addView(heading)
             val status = text("正在加载…"); b.rows.addView(status)
             val row = row()
             val connection = store.connection(category.connectionId)
             if (connection == null) { status.text = "连接配置不存在，请到设置中检查"; continue }
-            job({ library.works(connection, category, it) }, { works ->
-                status.text = if (works.isEmpty()) "此分类暂无作品文件夹" else "${works.size} 部作品"
+            var displayed: List<Work>? = null
+            fun show(works: List<Work>) {
+                heading.text = "${category.name}   ·   ${works.size}   ›"
+                status.text = if (works.isEmpty()) "此分类暂无作品文件夹" else ""
+                status.visibility = if (works.isEmpty()) View.VISIBLE else View.GONE
+                if (displayed == works) return
+                displayed = works; row.removeAllViews()
                 works.take(12).forEach { row.addView(poster(it), cardParams()) }
                 if (works.size > 12) row.addView(button("查看全部 ${works.size} 部") {
                     startActivity(Intent(this, CategoryActivity::class.java).putExtra("category", category.id))
+                }, cardParams())
+            }
+            fun refresh() {
+                job({ library.works(connection, category, it) }, { show(it) }, { message ->
+                    status.visibility = View.VISIBLE; status.text = message
+                    if (displayed == null) row.addView(button("重试") { load() }, cardParams())
                 })
-            }, { message -> status.text = message; row.addView(button("重试") { load() }) })
+            }
+            refresh()
         }
     }
     private fun row(): LinearLayout {

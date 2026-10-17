@@ -1,102 +1,15 @@
-# 云影 · Android WebDAV 播放器
+# OpenList 分支（0.4.2-dual-player）
 
-轻量原生 Android 播放器，最低 Android 4.3 / API 18，同时面向触屏和电视遥控器。首页上方显示继续播放，下面按分类展示海报；分类进入完整海报网格。
+在设置中添加 OpenList 服务连接（填写服务首页地址和账号密码），测试并保存后添加文件夹作为分类。优先读取作品目录内 movie.nfo 和 poster.jpg；保留分季、自然集序、进度、音轨。首页进入时自动获取列表，首页与分类的可见海报优先读取缓存，缺失自动下载并缓存。首页无刷新按钮，分类和详情保留手动刷新用于更新已有资料。
 
-## 首次使用
+参考 my-tv 的 OkHttp API 网络层及 Media3 播放方式，保留本项目 Media3 1.8.0 和 FFmpeg 音频扩展。使用 /api/auth/login、/api/fs/list、/api/fs/get 与 fs/get 返回的 raw_url 下载，移除 Ghosten 运行依赖。Token 仅驻留内存，401 重新登录一次，资料和视频下载不发送登录密码或 API token。
 
-1. 在设置中添加 WebDAV 连接，填写最终服务地址，明确选择“匿名访问”或“用户名密码”，测试成功后保存。匿名访问不发送 Authorization，也不保留账号密码；用户名密码模式使用 HTTP Basic，用户名必填，密码按服务要求可为空。旧连接自动按原有账号密码迁移模式。
-2. 添加分类，选择连接，在远程目录选择器里逐层进入目录，然后选择当前目录并填写分类名称。
-3. 分类目录下一层的每个文件夹作为一部作品，文件夹名称即作品名称。
-4. 点击海报进入作品详情，选择视频或季/集播放。首页的继续播放直接恢复对应视频。
+使用独立的数据文件，从空白配置开始，不读取或迁移旧版本数据。请添加 OpenList 连接；服务部署在子路径时填写包含子路径的首页地址。
 
-支持多个 WebDAV 连接。编辑连接时如果根地址改变，保存为新连接，保留旧连接和分类，避免把旧分类误指向另一台服务器。更换分类目录可在设置中操作。删除分类不删除服务器文件，也不清除播放记录。
+构建仍仅在天翼云 server_id=19 /srv/davplayer，使用现有签名和 Docker 脚本。尚需用户手动验证真实播放。
 
-## 目录约定
+播放核心可在设置和播放页切换：ExoPlayer（默认，Media3 1.8.0 + FFmpeg 音频扩展）或系统 MediaPlayer。切换释放旧核心后接续进度，保留播放/暂停意图；音轨偏好按核心分别保存。MediaPlayer 的格式和音轨支持取决于设备，不提供下载速率。不会因错误自动切换核心。
 
-```text
-电影/                       # 分类目录
-└── 示例影片/                # 作品名称
-    ├── poster.jpg           # 封面
-    ├── movie.nfo            # Kodi 格式影片资料
-    └── 示例影片.mkv
-电视剧/
-└── 示例剧集/
-    ├── cover.png
-    ├── tvshow.nfo
-    ├── 第1季/
-    │   ├── 第01集.mp4
-    │   └── 第02集.mp4
-    └── 第2季/
-        └── 第01集.mp4
-```
+构建、验证和当前验收边界见 [docs/verification.md](docs/verification.md)，播放生命周期见 [docs/playback.md](docs/playback.md)，资料规则见 [docs/cache.md](docs/cache.md)。FFmpeg 源码与重建说明见 [docs/media3-ffmpeg.md](docs/media3-ffmpeg.md)。
 
-- 封面优先级：`poster` → `cover` → `folder` → 按名称排序的第一张图片。支持 JPG/JPEG/PNG/WebP；没有封面时使用占位。
-- 影片资料统一使用 Kodi NFO XML（UTF-8，最多 512 KiB），不再读取 `description.txt`。识别根目录的 `tvshow.nfo`、`movie.nfo`、目录同名 `.nfo`，单视频兼容视频同名 `.nfo`；只有一个其他 NFO 时作为兜底，多个无匹配文件时不随意选取。失败不阻止播放。
-- 读取 `title`、`plot`、`year`、`premiered`/`aired`、`runtime`（分钟）、重复 `genre`。支持新版默认评分与旧版 `rating`，统一显示为十分制。缺项不显示，NFO 标题仅用于详情展示，分类映射仍使用文件夹名。
-- 当前读取已有刮削结果，不联网自动刮削，不加载 NFO 外部图片/预告片链接，不自动生成单集截图。
-- 作品根目录只有一个视频即单影片；多个视频按自然文件名排序，例如第 2 集在第 10 集前面。
-- 作品的直接子目录中有视频时，该目录作为一季；无视频的图片或字幕目录不作为季。不向更深层递归。
-- 根目录视频和分季共存时，根目录视频显示为“未分季”。最多读取 100 个直接子目录。
-- 按扩展名识别候选视频不代表设备一定能解码。具体格式、音轨、封装兼容性取决于选中的核心和设备。
-
-示例：[movie.nfo](docs/examples/movie.nfo)、[tvshow.nfo](docs/examples/tvshow.nfo)。格式参考 [Kodi 电影 NFO](https://kodi.wiki/view/NFO_files/Movies) 和 [剧集 NFO](https://kodi.wiki/view/NFO_files/TV_shows)。示例为虚构数据。
-
-## 播放与记录
-
-默认系统 MediaPlayer，可在设置或播放器里手动切换 ExoPlayer，并保存偏好。切换时释放旧实例并恢复进度，不自动换核。播放结束停在当前视频，不自动播放下一集。
-
-播放器使用全屏图标控制：点击画面显示/隐藏控制栏，播放时 4 秒无操作自动隐藏；暂停、错误、拖动进度条、核心选择时保持可见。遥控器方向键或确认键唤出控制，返回键先唤出隐藏的控制栏、再退出。支持暂停、进度条跳转和前后 10 秒。所有按钮支持遥控器焦点及触屏；硬件媒体键支持播放暂停、快退快进。退出、进入后台及 Surface 销毁时保存进度并释放实例；恢复前台后重建，恢复此前的播放/暂停意图。旧实例回调通过代次和实例隔离。
-
-播放中每 5 秒保存记录，暂停和退出补存。最多保留最近 100 部作品，每部作品保留最近观看的视频。记录关联连接和视频路径；文件移动/删除后提示错误，不自动清空记录。
-
-## 请求、缓存与凭据边界
-
-视频 GET 支持最多 5 次重定向及签名下载地址，保留 Range；跨源跳转后永久移除该请求链的 WebDAV 认证，禁止 HTTPS 降级和 URL 内嵌账号密码。系统核心先解析视频最终地址，再交给 MediaPlayer，禁止其再次跨域自动跳转。目录和封面请求仍禁止重定向。
-
-目录使用 `PROPFIND Depth: 1`，命名空间与成功 `propstat` 解析；XML 禁用 DTD/实体，响应最多 2 MiB / 5000 条 / 32 层。路径使用 HttpUrl 编解码，拒绝跨源、超出连接根目录、签名查询参数和编码分隔符。账号密码单独填写，不嵌入 URL。
-
-目录、NFO、封面和视频初始请求使用一致的认证。目录和图片要求最终地址；视频采用上述受控重定向。系统 MediaPlayer 使用公开 API 传入解析后的媒体 URL 与必要认证头，由系统网络栈负责实际传输和 Range；该行为必须在实际服务/旧设备上验证。
-
-所有网络和 XML 解析在工作线程执行；页面重载或销毁取消请求，丢弃过期结果。首页每分类预览最多 12 部，封面只对可见项加载，完整分类使用原生 GridView 复用视图。目录内存缓存最多 128 项、有效 60 秒；封面文件最多 4 MiB，缩略图内存预算 8 MiB、磁盘预算 32 MiB、有效 24 小时。刷新清除列表与封面缓存。视频不写入磁盘缓存。
-
-账号密码保存在应用私有 SharedPreferences，禁止系统备份；设置页和凭据对话框禁止截图。此存储不抵抗 root、设备控制或已解锁设备上的应用调试。HTTP 会明文传输账号/视频；HTTPS 不关闭证书和主机名校验。旧 Android 的 TLS 与证书链兼容性需实机验证。
-
-## 构建
-
-只在天翼云（SPanel server_id=19）的独立目录 `/srv/davplayer` 构建，不使用本机 Android SDK/NDK，不复用 my-tv 目录。
-
-固定组合：AGP 8.3.2 / Gradle 8.4 / Kotlin 1.9.22 / JDK 17，compileSdk 34、targetSdk 33、minSdk 18、Java 字节码目标 8。Gradle 分发包固定 SHA256。基础 SDK 镜像固定为：
-
-```text
-ghcr.io/cirruslabs/android-sdk@sha256:8f3fb92fc5c21ee8b9cfe560947ecd0ded39c1b0df7d20d937b8217c8c57c49b
-```
-
-基础镜像实际包含 JDK 21，项目通过 `docker/Dockerfile` 加入固定的 Eclipse Temurin 17.0.20.1+1，下载包 SHA256 固定为 `3808d1d15e3ec6bd5b84057fb5d84c33d8a1536a258146bcea2e603fc726e08e`。首轮构建自动生成项目专用镜像 `davplayer-android:34-temurin17.0.20.1-1`，不改变其他项目镜像或服务。来源为 [Temurin 官方发布](https://github.com/adoptium/temurin17-binaries/releases/tag/jdk-17.0.20.1%2B1)。
-
-Media3 固定 1.2.1，仅 ExoPlayer 文件播放；项目自行实现小型文件数据源，使用严格固定的 OkHttp 3.12.13。官方 media3-datasource-okhttp 1.2.1 发布 AAR 的 minSdk 为 21，因此不引入该模块。数据源传递认证，验证 Range 206 与 Content-Range 起点，拒绝跳转时返回完整 200 文件。API 18 运行时 API 与完整依赖图仍须核验，不能靠版本号或 overrideLibrary 绕过最低要求。MultiDexApplication 已初始化，debug 启用 v1/v2 签名。
-
-源码发布到公共仓库 [oawbz/Player](https://github.com/oawbz/Player)，本地提交并推送后，天翼云使用匿名 HTTPS 拉取，无需在编译机器放置 GitHub 私钥。首次创建空目录时：
-
-```sh
-git clone https://github.com/oawbz/Player.git /srv/davplayer
-cd /srv/davplayer
-```
-
-签名密钥同时保存在本地 `signing/debug.keystore`（目录权限 700、文件权限 600，Git 忽略）和远程 signing 目录；使用同一密钥继续签名，禁止替换已存在且不同的密钥。
-
-首次构建前须通过安全文件传输恢复本地签名到远程 signing 目录；缺失时脚本停止，避免生成新密钥导致已有应用无法覆盖升级。
-
-后续在远程目录执行 `git pull --ff-only origin main`。仓库排除 `.codex`、签名密钥、缓存、APK 和本机环境配置；保留远程 `signing/debug.keystore` 与 `cache/gradle`。然后：
-
-```sh
-./build-android-docker.sh testDebugUnitTest lintDebug assembleDebug
-./verify-apk-docker.sh
-```
-
-使用项目独立 `/srv/davplayer/cache/gradle` 缓存，使用镜像内 SDK，构建容器使用项目范围的 host 网络。脚本验证 JDK 17 与 SDK 34；若镜像环境不匹配应停止核查，不随意升级工具链。连接凭据不属于仓库内容。
-
-工具链参考：[AGP 8.3 兼容要求](https://developer.android.com/build/releases/agp-8-3-0-release-notes)、[Media3 1.2.1 固定常量](https://github.com/androidx/media/blob/1.2.1/constants.gradle)。官方 Media3 声明自身最低 SDK 16，应用最低 SDK 仍设为 18，完整传递依赖与设备运行必须另验。
-
-## 验证状态
-
-见 [docs/verification.md](docs/verification.md)。构建成功、安装成功、目录加载成功和实际播放成功应分别记录；没有实机证据不能称为完整验收。
+项目只提交当前应用源码、测试、构建脚本、图标源文件、NFO 示例及许可声明；签名、APK、缓存、源码快照和本地诊断材料由 .gitignore 排除。

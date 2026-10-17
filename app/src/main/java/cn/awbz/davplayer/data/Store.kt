@@ -8,12 +8,25 @@ import java.io.File
 import java.util.concurrent.ExecutorService
 
 class Store(context: Context, private val writer: ExecutorService) {
-    private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-    private val historyFile = AtomicFile(File(context.filesDir, "history.json"))
+    private val prefs = context.getSharedPreferences("openlist-settings-v1", Context.MODE_PRIVATE)
+    private val historyFile = AtomicFile(File(context.filesDir, "openlist-history-v1.json"))
+    var playbackEngine: cn.awbz.davplayer.playback.PlaybackEngine
+        get() = cn.awbz.davplayer.playback.PlaybackEngine.stored(prefs.getString("playback-engine", null))
+        set(value) { prefs.edit().putString("playback-engine", value.name).apply() }
     private var records = readHistory()
-    var core: Core
-        get() = runCatching { Core.valueOf(prefs.getString("core", Core.SYSTEM.name)!!) }.getOrDefault(Core.SYSTEM)
-        set(value) { prefs.edit().putString("core", value.name).apply() }
+    private fun audioKey(connectionId: String, path: String): String {
+        val value = "$connectionId\n$path"
+        val bytes = java.security.MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+        return "audio_" + bytes.joinToString("") { "%02x".format(it.toInt() and 255) }
+    }
+    fun audioPreference(connectionId: String, path: String): Pair<String, String>? = runCatching {
+        val key = audioKey(connectionId, path)
+        val raw = prefs.getString(key, null) ?: return null
+        val json = JSONObject(raw); json.getString("id") to json.getString("label")
+    }.getOrNull()
+    fun saveAudioPreference(connectionId: String, path: String, id: String, label: String) {
+        prefs.edit().putString(audioKey(connectionId, path), JSONObject().put("id", id).put("label", label).toString()).apply()
+    }
     fun connections(): List<Connection> = array("connections").objects().map {
         Connection(it.getString("id"), it.getString("name"), it.getString("url"), it.optString("user"), it.optString("password"), AuthMode.stored(it.optString("authMode"), it.optString("user"), it.optString("password")))
     }
